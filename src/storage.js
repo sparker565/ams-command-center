@@ -11,11 +11,20 @@ export function loadAppState() {
     if (!raw) return createSeedData();
 
     const parsed = JSON.parse(raw);
+    const seed = createSeedData();
     return {
-      ...createSeedData(),
+      ...seed,
       ...parsed,
+      companyProfiles: {
+        ...seed.companyProfiles,
+        ...(parsed.companyProfiles || {}),
+        vendors: {
+          ...(seed.companyProfiles?.vendors || {}),
+          ...(parsed.companyProfiles?.vendors || {}),
+        },
+      },
       ui: {
-        ...createSeedData().ui,
+        ...seed.ui,
         ...(parsed.ui || {}),
       },
     };

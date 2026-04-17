@@ -1,4 +1,4 @@
-export const STORAGE_KEY = "ams-command-center-v0-4";
+export const STORAGE_KEY = "ams-command-center-v0-5";
 
 export const ROLES = {
   OWNER: "Owner",
@@ -108,11 +108,8 @@ export const SCREEN_LABELS = {
 };
 
 export const INVOICE_STATUS = [
-  "Not Submitted",
-  "Ready for Invoice",
   "Submitted",
   "Under Review",
   "Approved",
-  "Rejected",
   "Paid",
 ];

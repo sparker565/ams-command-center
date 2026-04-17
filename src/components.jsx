@@ -474,11 +474,15 @@ export function JobCard({ job, onStart, onComplete, onHelp }) {
         </span>
       </div>
       <div className="job-card-copy">{job.serviceType}</div>
+      <div className="job-card-times">
+        <span>Start: {job.startTime ? new Date(job.startTime).toLocaleString() : "Not started"}</span>
+        <span>Complete: {job.completedTime ? new Date(job.completedTime).toLocaleString() : "Not completed"}</span>
+      </div>
       <div className="job-card-actions">
-        <button className="primary-button" onClick={() => onStart(job.id)}>
+        <button className="primary-button" onClick={() => onStart(job.id)} disabled={Boolean(job.startTime)}>
           Start Job
         </button>
-        <button className="secondary-button" onClick={() => onComplete(job.id)}>
+        <button className="secondary-button" onClick={() => onComplete(job.id)} disabled={Boolean(job.completedTime)}>
           Complete Job
         </button>
         <button className="secondary-button" onClick={() => onHelp(job.id)}>

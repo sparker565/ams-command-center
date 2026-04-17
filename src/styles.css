@@ -589,6 +589,14 @@ img {
   margin: 6px 0 0;
 }
 
+.job-card-times {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  color: #cabdaf;
+  font-size: 0.9rem;
+}
+
 .site-details-card {
   margin-top: 14px;
   padding: 16px;
@@ -834,6 +842,18 @@ img {
   color: #cbf7da;
 }
 
+.status-pill.set {
+  background: rgba(46, 204, 113, 0.16);
+  border-color: rgba(46, 204, 113, 0.38);
+  color: #cbf7da;
+}
+
+.status-pill.not-set {
+  background: rgba(255, 159, 69, 0.16);
+  border-color: rgba(255, 159, 69, 0.4);
+  color: #ffd8b1;
+}
+
 .status-pill.need-help {
   background: rgba(231, 76, 60, 0.16);
   border-color: rgba(231, 76, 60, 0.38);
@@ -1015,6 +1035,15 @@ img {
   background: rgba(12, 12, 12, 0.96);
 }
 
+.profile-photo-card {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-photo-card .secondary-button {
+  width: fit-content;
+}
+
 .clickable-row {
   cursor: pointer;
 }
@@ -1136,5 +1165,54 @@ img {
   .list-scroll,
   .compact-scroll {
     max-height: none;
+  }
+}
+
+html,
+body,
+#root,
+.app-shell,
+.main-shell,
+.content-shell {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.table-wrap,
+.list-scroll,
+.contained-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.detail-muted {
+  color: #cabdaf;
+  font-size: 0.9rem;
+}
+
+.invoice-line-items {
+  display: grid;
+  gap: 12px;
+}
+
+.invoice-line-item {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.invoice-line-item input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid #2f2b28;
+  background: #111;
+  color: #f7f1eb;
+  padding: 12px 14px;
+}
+
+@media (max-width: 980px) {
+  .invoice-line-item {
+    grid-template-columns: 1fr;
   }
 }
