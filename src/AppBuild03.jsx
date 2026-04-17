@@ -53,12 +53,18 @@ function formatMoney(value) {
 }
 
 function findCurrentUser(state) {
-  return state.users.find((user) => user.id === state.ui.currentUserId) || null;
+  const allUsers = [
+    ...(state.users || []),
+    ...(state.vendors || []),
+    ...(state.operators || []),
+  ];
+
+  return allUsers.find((user) => user.id === state.ui?.currentUserId) || null;
 }
 
 function getActiveScreen(state, user) {
-  if (!user) return "dashboard";
-  return state.ui.activeScreenByRole[user.role] || "dashboard";
+  if (!user?.role) return "dashboard";
+  return state.ui?.activeScreenByRole?.[user.role] || "dashboard";
 }
 
 function normalizeVendor(vendor) {
@@ -144,6 +150,14 @@ function normalizeStateData(state) {
       ? state.ui.selectedSiteId
       : state.sites?.[0]?.id || null;
 
+  const allUsers = [
+    ...(state.users || []),
+    ...vendors,
+    ...(state.operators || []),
+  ];
+  const savedCurrentUserId = state.ui?.currentUserId || null;
+  const currentUserExists = allUsers.some((user) => user.id === savedCurrentUserId);
+
   return {
     ...state,
     vendors,
@@ -151,7 +165,7 @@ function normalizeStateData(state) {
     jobs,
     workOrders,
     ui: {
-      currentUserId: state.ui?.currentUserId || null,
+      currentUserId: currentUserExists ? savedCurrentUserId : null,
       selectedSiteId,
       activeScreenByRole: {
         [ROLES.OWNER]: "dashboard",
@@ -306,24 +320,34 @@ function AppBuild03() {
   }, [appState]);
 
   useEffect(() => {
-    if (!appState.ui.currentUserId) return;
+  const currentUserId = appState.ui?.currentUserId;
+  if (!currentUserId) return;
 
-    const savedUser = appState.users.find((user) => user.id === appState.ui.currentUserId);
-    if (!savedUser) return;
+  const allUsers = [
+    ...(appState.users || []),
+    ...(appState.vendors || []),
+    ...(appState.operators || []),
+  ];
 
-    setAppState((current) =>
-      normalizeStateData({
-        ...current,
-        ui: {
-          ...current.ui,
-          activeScreenByRole: {
-            ...current.ui.activeScreenByRole,
-            [savedUser.role]: "dashboard",
-          },
+  const savedUser = allUsers.find((user) => user.id === currentUserId) || null;
+  if (!savedUser?.role) return;
+
+  const existingScreen = appState.ui?.activeScreenByRole?.[savedUser.role];
+  if (existingScreen) return;
+
+  setAppState((current) =>
+    normalizeStateData({
+      ...current,
+      ui: {
+        ...current.ui,
+        activeScreenByRole: {
+          ...(current.ui?.activeScreenByRole || {}),
+          [savedUser.role]: "dashboard",
         },
-      })
-    );
-  }, []);
+      },
+    })
+  );
+}, [appState.ui?.currentUserId]);
 
   const [siteForm, setSiteForm] = useState({
     name: "",
@@ -373,7 +397,7 @@ function AppBuild03() {
       ui: {
         ...current.ui,
         activeScreenByRole: {
-          ...current.ui.activeScreenByRole,
+          ...(current.ui?.activeScreenByRole || {}),
           [currentUser.role]: screen,
         },
       },
@@ -411,7 +435,7 @@ function AppBuild03() {
         ...current.ui,
         currentUserId: match.id,
         activeScreenByRole: {
-          ...current.ui.activeScreenByRole,
+          ...(current.ui?.activeScreenByRole || {}),
           [match.role]: "dashboard",
         },
       },
@@ -1088,7 +1112,7 @@ function AppBuild03() {
 
   const amsDashboard = (
     <div className="screen-grid">
-      {(currentUser.role === ROLES.AMS_ADMIN || currentUser.role === ROLES.AMS_MANAGER) && (
+      {(currentUser?.role === ROLES.AMS_ADMIN || currentUser?.role === ROLES.AMS_MANAGER) && (
         <div
           style={{
             color: "var(--ams-orange, #f97316)",
