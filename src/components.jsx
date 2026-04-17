@@ -11,6 +11,7 @@ export function BrandLogo() {
 export function Header({
   currentUser,
   onOpenDrawer,
+  onOpenNotifications,
   onToggleProfileMenu,
   profileMenuOpen,
   onNavigate,
@@ -39,13 +40,21 @@ export function Header({
       </div>
 
       <div className="topbar-side topbar-side-right">
+        <button className="icon-button bell-button" onClick={onOpenNotifications} aria-label="Notifications">
+          <span className="bell-icon" aria-hidden="true">
+            Bell
+          </span>
+        </button>
+
         <div className="profile-anchor">
           <button
             className="profile-button profile-circle-button"
             onClick={onToggleProfileMenu}
             aria-label="Open profile menu"
           >
-            <span className="profile-circle-text">P</span>
+            <span className="profile-circle-text">
+              {currentUser?.name?.trim()?.charAt(0)?.toUpperCase() || "P"}
+            </span>
           </button>
 
           {profileMenuOpen && (
@@ -104,7 +113,7 @@ export function Drawer({
               className={`nav-item ${activeScreen === item ? "active" : ""}`}
               onClick={() => onNavigate(item)}
             >
-              {labels[item]}
+              {labels[item] || item}
             </button>
           ))}
         </nav>
@@ -126,7 +135,7 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
     <div className="login-shell">
       <div className="login-panel">
         <BrandLogo />
-        <div className="login-caption">Command Center Demo Version 0.3</div>
+        <div className="login-caption">Command Center Demo Version 0.4</div>
 
         <label className="field">
           <span>Email</span>
@@ -155,8 +164,8 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
           <button className="secondary-button" onClick={() => onDemoLogin("ams")}>
             AMS Demo
           </button>
-          <button className="secondary-button" onClick={() => onDemoLogin("vendor")}>
-            Vendor Demo
+          <button className="secondary-button" onClick={() => onDemoLogin("crew")}>
+            Crew Demo
           </button>
         </div>
       </div>
@@ -179,12 +188,27 @@ export function PageSection({ title, action, contentClassName = "", children }) 
 export function StatGrid({ items }) {
   return (
     <div className="stat-grid">
-      {items.map((item) => (
-        <div key={item.label} className="stat-card">
-          <div className="stat-value">{item.value}</div>
-          <div className="stat-label">{item.label}</div>
-        </div>
-      ))}
+      {items.map((item) => {
+        const className = `stat-card ${item.featured ? "featured" : ""} ${
+          item.onClick ? "interactive" : ""
+        }`;
+
+        if (item.onClick) {
+          return (
+            <button key={item.label} className={className} onClick={item.onClick}>
+              <div className="stat-value">{item.value}</div>
+              <div className="stat-label">{item.label}</div>
+            </button>
+          );
+        }
+
+        return (
+          <div key={item.label} className={className}>
+            <div className="stat-value">{item.value}</div>
+            <div className="stat-label">{item.label}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -208,13 +232,21 @@ export function EmptyState({ title, text }) {
   );
 }
 
-export function DataTable({ columns, rows, emptyTitle, emptyText }) {
+export function DataTable({
+  columns,
+  rows,
+  emptyTitle,
+  emptyText,
+  onRowClick,
+  selectedRowId,
+  stickyHeader = false,
+}) {
   if (!rows.length) {
     return <EmptyState title={emptyTitle} text={emptyText} />;
   }
 
   return (
-    <div className="table-wrap">
+    <div className={`table-wrap ${stickyHeader ? "sticky-table" : ""}`}>
       <table className="data-table">
         <thead>
           <tr>
@@ -225,7 +257,13 @@ export function DataTable({ columns, rows, emptyTitle, emptyText }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr
+              key={row.id}
+              className={`${selectedRowId === row.id ? "selected-row" : ""} ${
+                onRowClick ? "clickable-row" : ""
+              }`}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
               {columns.map((column) => (
                 <td key={`${row.id}-${column.key}`}>{column.render(row)}</td>
               ))}
@@ -254,7 +292,11 @@ export function TopActionBar({ actions }) {
   return (
     <div className="top-action-bar">
       {actions.map((action) => (
-        <button key={action.key} className="secondary-button" onClick={action.onClick}>
+        <button
+          key={action.key}
+          className={action.featured ? "primary-button" : "secondary-button"}
+          onClick={action.onClick}
+        >
           {action.label}
         </button>
       ))}
@@ -275,6 +317,46 @@ export function FilterRow({ label, value, options, onChange }) {
           ))}
         </select>
       </label>
+    </div>
+  );
+}
+
+export function SearchBar({ value, onChange, placeholder = "Search" }) {
+  return (
+    <label className="search-bar">
+      <span>Search</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+    </label>
+  );
+}
+
+export function Modal({ open, title, children, onClose, footer }) {
+  if (!open) return null;
+
+  return (
+    <>
+      <div className="modal-scrim" onClick={onClose} />
+      <div className="modal-shell" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-panel">
+          <div className="modal-header">
+            <h2>{title}</h2>
+            <button className="text-button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+          <div className="modal-body">{children}</div>
+          {footer ? <div className="modal-footer">{footer}</div> : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function SplitView({ list, detail }) {
+  return (
+    <div className="split-view">
+      <div className="split-view-list">{list}</div>
+      <div className="split-view-detail">{detail}</div>
     </div>
   );
 }
