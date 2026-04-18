@@ -40,6 +40,25 @@ function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+const FIREBASE_ROLE_BRIDGE = {
+  "sparker565@gmail.com": {
+    name: "Spark Owner",
+    role: ROLES.OWNER,
+  },
+  "shawnp@advancedmtnc.com": {
+    name: "Shawn P",
+    role: ROLES.AMS_ADMIN,
+  },
+  "jeanniez@advancedmtnc.com": {
+    name: "Jeannie Z",
+    role: ROLES.AMS_ADMIN,
+  },
+  "abbyquinn@rocketmail.com": {
+    name: "Abby Quinn",
+    role: ROLES.CREW,
+  },
+};
+
 function formatDate(value) {
   if (!value) return "Not available";
   return new Date(value).toLocaleString();
@@ -1083,6 +1102,67 @@ function AppBuild03() {
     return true;
   };
 
+  const getFirebaseBridgeUser = (email) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const bridgeConfig = FIREBASE_ROLE_BRIDGE[normalizedEmail];
+    if (!bridgeConfig) return null;
+
+    const existingUser =
+      getAllUserPool(appState).find(
+        (user) => user.email?.toLowerCase() === normalizedEmail && user.role === bridgeConfig.role
+      ) || null;
+
+    if (existingUser) {
+      return {
+        ...existingUser,
+        email: normalizedEmail,
+        active: existingUser.active ?? true,
+      };
+    }
+
+    return {
+      id: createId("firebase-user"),
+      name: bridgeConfig.name,
+      email: normalizedEmail,
+      password: "",
+      role: bridgeConfig.role,
+      active: true,
+      phone: "",
+      jobTitle: bridgeConfig.role,
+      companyName: bridgeConfig.role === ROLES.CREW ? "Crew Company" : "Advanced Maintenance Services",
+      streetAddress: "",
+      city: "",
+      state: "",
+      zip: "",
+      internalNotes: "Firebase role bridge user",
+    };
+  };
+
+  const completeFirebaseLogin = (firebaseUser) => {
+    if (!firebaseUser) return false;
+
+    updateAppState((current) => {
+      const upsertedUsers = current.users.some((user) => user.id === firebaseUser.id)
+        ? current.users.map((user) => (user.id === firebaseUser.id ? { ...user, ...firebaseUser } : user))
+        : [firebaseUser, ...current.users];
+
+      return {
+        ...current,
+        users: upsertedUsers,
+        ui: {
+          ...current.ui,
+          currentUserId: firebaseUser.id,
+          activeScreenByRole: {
+            ...(current.ui?.activeScreenByRole || {}),
+            [firebaseUser.role]: current.ui?.activeScreenByRole?.[firebaseUser.role] || "dashboard",
+          },
+        },
+      };
+    });
+    setLoginForm({ email: "", password: "" });
+    return true;
+  };
+
   const findLocalLoginMatch = (email, password) =>
     (appState.users || []).find((user) => {
       const expectedPassword =
@@ -1100,6 +1180,14 @@ function AppBuild03() {
     );
 
     const firebaseResult = await signIn(email.trim(), password);
+    if (firebaseResult.user) {
+      const firebaseMappedUser = getFirebaseBridgeUser(email);
+      if (firebaseMappedUser) {
+        completeFirebaseLogin(firebaseMappedUser);
+        return;
+      }
+    }
+
     if (firebaseResult.user && match) {
       completeLocalLogin(match);
       return;
