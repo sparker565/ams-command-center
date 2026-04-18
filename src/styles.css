@@ -601,6 +601,37 @@ img {
   font-size: 0.9rem;
 }
 
+.job-card-service {
+  margin-top: 8px;
+  color: #f7f1eb;
+  font-weight: 700;
+}
+
+.job-card-scope {
+  margin-top: 12px;
+}
+
+.job-card-scope p {
+  margin: 6px 0 0;
+  color: #cabdaf;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.job-card-status-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin-top: 12px;
+}
+
+.job-card-status-grid p {
+  margin: 0;
+  color: #cabdaf;
+}
+
 .site-details-card {
   margin-top: 14px;
   padding: 16px;
@@ -958,6 +989,11 @@ img {
   width: 44px;
   height: 44px;
   padding: 0;
+}
+
+.bell-icon {
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 .bell-icon {

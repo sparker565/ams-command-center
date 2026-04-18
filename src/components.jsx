@@ -42,7 +42,7 @@ export function Header({
       <div className="topbar-side topbar-side-right">
         <button className="icon-button bell-button" onClick={onOpenNotifications} aria-label="Notifications">
           <span className="bell-icon" aria-hidden="true">
-            Bell
+            🔔
           </span>
         </button>
 
@@ -465,6 +465,10 @@ export function AvailableWorkCard({ workOrder, site, children }) {
 }
 
 export function JobCard({ job, onStart, onComplete, onHelp }) {
+  const scopePreview = job.scope || job.description || "Scope details not provided.";
+  const startStatus = job.startTime ? "Started" : "Not Started";
+  const completionStatus = job.completedTime ? "Completed" : "Open";
+
   return (
     <article className="job-card">
       <div className="job-card-top">
@@ -473,7 +477,21 @@ export function JobCard({ job, onStart, onComplete, onHelp }) {
           {job.status}
         </span>
       </div>
-      <div className="job-card-copy">{job.serviceType}</div>
+      <div className="job-card-service">{job.servicePerformed || job.serviceType}</div>
+      <div className="job-card-scope">
+        <span className="detail-label">Scope</span>
+        <p>{scopePreview}</p>
+      </div>
+      <div className="job-card-status-grid">
+        <div>
+          <span className="detail-label">Start Status</span>
+          <p>{startStatus}</p>
+        </div>
+        <div>
+          <span className="detail-label">Completion Status</span>
+          <p>{completionStatus}</p>
+        </div>
+      </div>
       <div className="job-card-times">
         <span>Start: {job.startTime ? new Date(job.startTime).toLocaleString() : "Not started"}</span>
         <span>Complete: {job.completedTime ? new Date(job.completedTime).toLocaleString() : "Not completed"}</span>
