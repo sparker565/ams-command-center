@@ -1164,7 +1164,7 @@ function AppBuild03() {
   };
 
   const findLocalLoginMatch = (email, password) =>
-    (appState.users || []).find((user) => {
+    getAllUserPool(appState).find((user) => {
       const expectedPassword =
         user.password || (user.role === ROLES.CREW ? "Crew123" : "");
       return (
