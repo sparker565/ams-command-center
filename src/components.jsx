@@ -135,7 +135,7 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
     <div className="login-shell">
       <div className="login-panel">
         <BrandLogo />
-        <div className="login-caption">Command Center Demo Version 0.4</div>
+        <div className="login-caption">Command Center Demo Version 0.5.6</div>
 
         <label className="field">
           <span>Email</span>

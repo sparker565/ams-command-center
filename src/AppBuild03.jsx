@@ -118,6 +118,7 @@ function normalizeVendor(vendor) {
     contactName: vendor.contactName || "",
     phone: vendor.phone || "",
     email: vendor.email || "",
+    password: vendor.password || "",
     internalNotes: vendor.internalNotes || "",
     states: vendor.states || [],
     serviceTypes: vendor.serviceTypes || (vendor.serviceType ? [vendor.serviceType] : []),
@@ -147,6 +148,8 @@ function normalizeSite(site) {
     internalNotes: site.internalNotes || "",
     assignedVendorId: site.assignedVendorId || "",
     assignedVendorName: site.assignedVendorName || "",
+    assignedCrewContactId: site.assignedCrewContactId || "",
+    assignedCrewContactName: site.assignedCrewContactName || "",
     siteMapStatus: site.siteMapStatus || "Upload Coming Soon",
     geoFenceStatus: site.geoFenceStatus || "Geo Fence Setup Coming Soon",
   };
@@ -230,7 +233,7 @@ function normalizeInvoice(invoice) {
     total,
     invoiceDate: invoice.invoiceDate || "",
     dueDate: invoice.dueDate || "",
-    terms: invoice.terms || "Net 15",
+    terms: invoice.terms || "Net 30",
     submittedAt: invoice.submittedAt || "",
     submittedBy: invoice.submittedBy || "",
     status: invoice.status || "Submitted",
@@ -489,7 +492,7 @@ function buildInvoiceRecord({ job, workOrder, currentUser }) {
     invoiceNumber: "",
     invoiceDate: new Date().toISOString(),
     dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-    terms: "Net 15",
+    terms: "Net 30",
     submittedAt: "",
     submittedBy: currentUser?.name || "",
     status: "Submitted",
@@ -531,8 +534,41 @@ function getCompanyProfileForRole(state, user, vendorRecord) {
   return state.companyProfiles?.ams || null;
 }
 
+function isAmsUser(user) {
+  return AMS_ROLES.includes(user?.role) || user?.role === ROLES.OWNER;
+}
+
 function canViewExternalWorkOrder(user) {
   return user?.role !== ROLES.CREW && user?.role !== "Vendor";
+}
+
+function canEditCrewIdentity(user) {
+  return user?.role === ROLES.OWNER || user?.role === ROLES.AMS_ADMIN;
+}
+
+function getCrewPasswordValue(user) {
+  return user?.password || "Crew123";
+}
+
+function buildWeatherThreatSnapshot(sites = []) {
+  const statuses = ["active", "watch_24", "watch_48", "watch_72", "inactive"];
+  return sites.map((site, index) => ({
+    siteId: site.id,
+    siteName: site.name,
+    state: site.state,
+    serviceType: index % 2 === 0 ? "Snow / Ice" : "Rain / Wind",
+    status: statuses[index % statuses.length],
+    summary:
+      statuses[index % statuses.length] === "active"
+        ? "Crews should treat this site as currently impacted."
+        : statuses[index % statuses.length] === "watch_24"
+        ? "Weather risk is expected inside the next 24 hours."
+        : statuses[index % statuses.length] === "watch_48"
+        ? "Weather risk is expected inside the next 48 hours."
+        : statuses[index % statuses.length] === "watch_72"
+        ? "Weather risk is expected inside the next 72 hours."
+        : "No active weather threat is currently projected.",
+  }));
 }
 
 function buildInvoiceDownloadMarkup(invoice, amsProfile, workOrder, currentUser) {
@@ -593,7 +629,7 @@ function buildInvoiceDownloadMarkup(invoice, amsProfile, workOrder, currentUser)
       <p class="meta"><strong>Invoice Number:</strong> ${invoice.invoiceNumber || "Not set"}</p>
       <p class="meta"><strong>Invoice Date:</strong> ${formatDate(invoice.invoiceDate)}</p>
       <p class="meta"><strong>Due Date:</strong> ${formatDate(invoice.dueDate)}</p>
-      <p class="meta"><strong>Terms:</strong> ${invoice.terms || "Net 15"}</p>
+      <p class="meta"><strong>Terms:</strong> ${invoice.terms || "Net 30"}</p>
       <p class="meta"><strong>AMS Work Order Number:</strong> ${amsWorkOrderNumber}</p>
       ${externalWorkOrderMarkup}
       <table>
@@ -651,6 +687,66 @@ function InvoiceStatusBadge({ value }) {
   return <StatusBadge value={value} label={value} />;
 }
 
+function SellControl({
+  sellValue,
+  pricingStatus,
+  editing,
+  onStartEdit,
+  onChange,
+  onSave,
+  disabled = false,
+}) {
+  const isSet = pricingStatus === "set";
+
+  if (isSet && !editing) {
+    return (
+      <div className="detail-card sell-lock-card">
+        <div className="proposal-summary-grid">
+          <div>
+            <span className="detail-label">Sell Price</span>
+            <p>{formatMoney(sellValue)}</p>
+          </div>
+          <div>
+            <span className="detail-label">Status</span>
+            <p>
+              <StatusBadge value="set" label="Sell Set" />
+            </p>
+          </div>
+        </div>
+        {!disabled ? (
+          <div className="form-actions">
+            <button className="secondary-button" onClick={onStartEdit}>
+              Edit Sell
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="detail-stack">
+      <InputRow>
+        <Field label="AMS Sell Price (Optional)">
+          <input
+            value={sellValue}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+            placeholder="Enter internal sell"
+          />
+        </Field>
+      </InputRow>
+      {!disabled ? (
+        <div className="form-actions">
+          <button className="secondary-button" onClick={onSave}>
+            Save Sell
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AppBuild03() {
   const [appState, setAppState] = useState(() => normalizeStateData(loadAppState()));
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -671,6 +767,7 @@ function AppBuild03() {
   const [selectedCrewId, setSelectedCrewId] = useState(null);
   const [selectedCrewSiteId, setSelectedCrewSiteId] = useState(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
+  const [selectedTeamMemberId, setSelectedTeamMemberId] = useState(null);
   const [reviewForm, setReviewForm] = useState({ reviewedPrice: "", amsNotes: "", sellPrice: "" });
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
@@ -683,13 +780,17 @@ function AppBuild03() {
     total: "",
     invoiceDate: "",
     dueDate: "",
-    terms: "Net 15",
+    terms: "Net 30",
     notes: "",
     status: "Submitted",
     lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
   });
   const [jobSellForm, setJobSellForm] = useState("");
   const [accountingSellForm, setAccountingSellForm] = useState("");
+  const [editingJobSellId, setEditingJobSellId] = useState(null);
+  const [editingAccountingSellJobId, setEditingAccountingSellJobId] = useState(null);
+  const [weatherCommandState, setWeatherCommandState] = useState([]);
+  const [weatherLoaded, setWeatherLoaded] = useState(false);
   const [crewCompletedJobSearch, setCrewCompletedJobSearch] = useState("");
   const [crewSiteSearch, setCrewSiteSearch] = useState("");
   const [jobConfirmation, setJobConfirmation] = useState(null);
@@ -701,9 +802,9 @@ function AppBuild03() {
     zip: "",
     internalNotes: "",
     assignedVendorId: "",
+    assignedCrewContactId: "",
   });
   const [vendorForm, setVendorForm] = useState({
-    name: "",
     companyName: "",
     streetAddress: "",
     city: "",
@@ -712,6 +813,7 @@ function AppBuild03() {
     contactName: "",
     phone: "",
     email: "",
+    password: "",
     serviceType: "",
     serviceTypes: "",
     states: "",
@@ -803,11 +905,14 @@ function AppBuild03() {
   const currentUser = findCurrentUser(appState);
   const activeScreen = getActiveScreen(appState, currentUser);
   const showExternalWorkOrder = canViewExternalWorkOrder(currentUser);
+  const isAmsViewer = isAmsUser(currentUser);
   const normalizedVendors = appState.vendors || [];
   const selectedSite =
     appState.sites.find((site) => site.id === appState.ui.selectedSiteId) || appState.sites[0] || null;
   const currentCrewRecord = findCrewForUser(normalizedVendors, currentUser);
   const currentCompanyProfile = getCompanyProfileForRole(appState, currentUser, currentCrewRecord);
+  const selectedTeamMember =
+    appState.users.find((user) => user.id === selectedTeamMemberId) || null;
   const nextWorkOrderNumber = getNextAmsWorkOrderNumber(appState.workOrders || []);
 
   const openScreen = (screen) => {
@@ -842,6 +947,54 @@ function AppBuild03() {
     if (type === "job") {
       setJobCreateForm({ workOrderId: "", vendorId: "", price: "" });
     }
+    if (type === "site") {
+      setEditingSiteId(null);
+      setSiteForm({
+        name: "",
+        streetAddress: "",
+        city: "",
+        state: "",
+        zip: "",
+        internalNotes: "",
+        assignedVendorId: "",
+        assignedCrewContactId: "",
+      });
+    }
+    if (type === "vendor") {
+      setEditingVendorId(null);
+      setVendorForm({
+        companyName: "",
+        streetAddress: "",
+        city: "",
+        state: "",
+        zip: "",
+        contactName: "",
+        phone: "",
+        email: "",
+        password: "",
+        serviceType: "",
+        serviceTypes: "",
+        states: "",
+        internalNotes: "",
+      });
+    }
+    if (type === "amsTeammate") {
+      setEditingUserId(null);
+      setUserForm({
+        name: "",
+        email: "",
+        password: "",
+        phone: "",
+        jobTitle: "",
+        companyName: "Advanced Maintenance Services",
+        streetAddress: "",
+        city: "",
+        state: "",
+        zip: "",
+        internalNotes: "",
+        role: ROLES.AMS_MANAGER,
+      });
+    }
   };
 
   const closeModal = () => setActiveModal(null);
@@ -860,10 +1013,15 @@ function AppBuild03() {
 
   const handleLogin = (email, password) => {
     const match = (appState.users || []).find(
-      (user) =>
-        user.email.toLowerCase() === email.trim().toLowerCase() &&
-        user.password === password &&
-        user.active
+      (user) => {
+        const expectedPassword =
+          user.password || (user.role === ROLES.CREW ? "Crew123" : "");
+        return (
+          user.email.toLowerCase() === email.trim().toLowerCase() &&
+          expectedPassword === password &&
+          user.active
+        );
+      }
     );
 
     if (!match) {
@@ -887,7 +1045,7 @@ function AppBuild03() {
 
   const handleDemoLogin = (type) => {
     if (type === "ams") return handleLogin("admin@amsdemo.local", "Admin123");
-    return handleLogin("crew@amsdemo.local", "Vendor123");
+    return handleLogin("crew@amsdemo.local", "Crew123");
   };
 
   const logout = () => {
@@ -913,11 +1071,17 @@ function AppBuild03() {
     }
 
     const assignedVendor = normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId);
+    const assignedCrewContact =
+      appState.users.find(
+        (user) => user.id === siteForm.assignedCrewContactId && user.role === ROLES.CREW
+      ) || null;
     const siteRecord = {
       ...siteForm,
       state: siteForm.state.toUpperCase(),
       assignedVendorId: siteForm.assignedVendorId || "",
       assignedVendorName: assignedVendor?.name || "",
+      assignedCrewContactId: siteForm.assignedCrewContactId || "",
+      assignedCrewContactName: assignedCrewContact?.name || "",
       address: buildAddressLine(siteForm),
       siteMapStatus: "Upload Coming Soon",
       geoFenceStatus: "Geo Fence Setup Coming Soon",
@@ -945,6 +1109,7 @@ function AppBuild03() {
       zip: "",
       internalNotes: "",
       assignedVendorId: "",
+      assignedCrewContactId: "",
     });
     setEditingSiteId(null);
     closeModal();
@@ -959,6 +1124,7 @@ function AppBuild03() {
       zip: site.zip || "",
       internalNotes: site.internalNotes || "",
       assignedVendorId: site.assignedVendorId || "",
+      assignedCrewContactId: site.assignedCrewContactId || "",
     });
     setEditingSiteId(site.id);
     setActiveModal("site");
@@ -989,8 +1155,8 @@ function AppBuild03() {
   };
 
   const saveVendor = () => {
-    if (!vendorForm.name.trim() || !vendorForm.serviceType) {
-      window.alert("Crew name and primary service type are required.");
+    if (!vendorForm.companyName.trim() || !vendorForm.email.trim() || !vendorForm.serviceType) {
+      window.alert("Company name, email, and primary service type are required.");
       return;
     }
 
@@ -1003,10 +1169,13 @@ function AppBuild03() {
       .map((value) => value.trim().toUpperCase())
       .filter(Boolean);
     const existingVendor = normalizedVendors.find((vendor) => vendor.id === editingVendorId);
+    const existingCrewUser =
+      appState.users.find((user) => user.id === existingVendor?.userId) || null;
+    const password = vendorForm.password || existingCrewUser?.password || "Crew123";
 
     const vendorRecord = {
-      name: vendorForm.name.trim(),
-      companyName: vendorForm.companyName.trim() || vendorForm.name.trim(),
+      name: vendorForm.companyName.trim(),
+      companyName: vendorForm.companyName.trim(),
       streetAddress: vendorForm.streetAddress.trim(),
       city: vendorForm.city.trim(),
       state: vendorForm.state.trim().toUpperCase(),
@@ -1014,6 +1183,7 @@ function AppBuild03() {
       contactName: vendorForm.contactName.trim(),
       phone: vendorForm.phone.trim(),
       email: vendorForm.email.trim(),
+      password,
       serviceType: vendorForm.serviceType,
       serviceTypes: parsedServiceTypes.length ? parsedServiceTypes : [vendorForm.serviceType],
       states: parsedStates,
@@ -1027,57 +1197,103 @@ function AppBuild03() {
       }),
     };
 
+    const upsertCrewUser = (users, vendorUserId) => {
+      const nextUserId = vendorUserId || createId("user");
+      const linkedUser = {
+        id: nextUserId,
+        active: true,
+        role: ROLES.CREW,
+        name: vendorRecord.contactName || vendorRecord.companyName,
+        email: vendorRecord.email,
+        password,
+        phone: vendorRecord.phone,
+        jobTitle: "Crew Contact",
+        companyName: vendorRecord.companyName,
+        streetAddress: vendorRecord.streetAddress,
+        city: vendorRecord.city,
+        state: vendorRecord.state,
+        zip: vendorRecord.zip,
+        internalNotes: vendorRecord.internalNotes,
+        profilePhotoStatus: "Photo Upload Coming Soon",
+        address: vendorRecord.address,
+      };
+
+      if (vendorUserId && users.some((user) => user.id === vendorUserId)) {
+        return {
+          userId: vendorUserId,
+          users: users.map((user) => (user.id === vendorUserId ? { ...user, ...linkedUser } : user)),
+        };
+      }
+
+      return {
+        userId: nextUserId,
+        users: [{ ...linkedUser }, ...users],
+      };
+    };
+
     if (editingVendorId) {
-      updateAppState((current) => ({
-        ...current,
-        vendors: current.vendors.map((vendor) =>
-          vendor.id === editingVendorId ? { ...vendor, ...vendorRecord } : vendor
-        ),
-        companyProfiles: {
-          ...(current.companyProfiles || {}),
-          vendors: {
-            ...(current.companyProfiles?.vendors || {}),
-            [editingVendorId]: {
-              ...(current.companyProfiles?.vendors?.[editingVendorId] || {}),
-              companyName: vendorRecord.companyName,
-              contactName: vendorRecord.contactName,
-              phone: vendorRecord.phone,
-              email: vendorRecord.email,
-              address: vendorRecord.streetAddress,
-              city: vendorRecord.city,
-              state: vendorRecord.state,
-              zip: vendorRecord.zip,
+      updateAppState((current) => {
+        const linkedUserUpdate = upsertCrewUser(current.users, existingVendor?.userId);
+        return {
+          ...current,
+          users: linkedUserUpdate.users,
+          vendors: current.vendors.map((vendor) =>
+            vendor.id === editingVendorId
+              ? { ...vendor, ...vendorRecord, userId: linkedUserUpdate.userId }
+              : vendor
+          ),
+          companyProfiles: {
+            ...(current.companyProfiles || {}),
+            vendors: {
+              ...(current.companyProfiles?.vendors || {}),
+              [editingVendorId]: {
+                ...(current.companyProfiles?.vendors?.[editingVendorId] || {}),
+                companyName: vendorRecord.companyName,
+                contactName: vendorRecord.contactName,
+                phone: vendorRecord.phone,
+                email: vendorRecord.email,
+                address: vendorRecord.streetAddress,
+                city: vendorRecord.city,
+                state: vendorRecord.state,
+                zip: vendorRecord.zip,
+              },
             },
           },
-        },
-      }));
+        };
+      });
     } else {
       const newVendorId = createId("vendor");
-      updateAppState((current) => ({
-        ...current,
-        vendors: [{ id: newVendorId, active: true, ...vendorRecord }, ...current.vendors],
-        companyProfiles: {
-          ...(current.companyProfiles || {}),
-          vendors: {
-            ...(current.companyProfiles?.vendors || {}),
-            [newVendorId]: {
-              companyName: vendorRecord.companyName,
-              contactName: vendorRecord.contactName,
-              phone: vendorRecord.phone,
-              email: vendorRecord.email,
-              address: vendorRecord.streetAddress,
-              city: vendorRecord.city,
-              state: vendorRecord.state,
-              zip: vendorRecord.zip,
-              billingDetails: "",
+      updateAppState((current) => {
+        const linkedUserUpdate = upsertCrewUser(current.users, null);
+        return {
+          ...current,
+          users: linkedUserUpdate.users,
+          vendors: [
+            { id: newVendorId, active: true, ...vendorRecord, userId: linkedUserUpdate.userId },
+            ...current.vendors,
+          ],
+          companyProfiles: {
+            ...(current.companyProfiles || {}),
+            vendors: {
+              ...(current.companyProfiles?.vendors || {}),
+              [newVendorId]: {
+                companyName: vendorRecord.companyName,
+                contactName: vendorRecord.contactName,
+                phone: vendorRecord.phone,
+                email: vendorRecord.email,
+                address: vendorRecord.streetAddress,
+                city: vendorRecord.city,
+                state: vendorRecord.state,
+                zip: vendorRecord.zip,
+                billingDetails: "",
+              },
             },
           },
-        },
-      }));
+        };
+      });
     }
 
     setVendorForm({
-      name: "",
       companyName: "",
       streetAddress: "",
       city: "",
@@ -1086,6 +1302,7 @@ function AppBuild03() {
       contactName: "",
       phone: "",
       email: "",
+      password: "",
       serviceType: "",
       serviceTypes: "",
       states: "",
@@ -1097,8 +1314,8 @@ function AppBuild03() {
 
   const startEditVendor = (vendor) => {
     const normalizedVendor = normalizeVendor(vendor);
+    const linkedUser = appState.users.find((user) => user.id === normalizedVendor.userId) || null;
     setVendorForm({
-      name: normalizedVendor.name,
       companyName: normalizedVendor.companyName || "",
       streetAddress: normalizedVendor.streetAddress || "",
       city: normalizedVendor.city || "",
@@ -1107,6 +1324,7 @@ function AppBuild03() {
       contactName: normalizedVendor.contactName || "",
       phone: normalizedVendor.phone || "",
       email: normalizedVendor.email || "",
+      password: linkedUser?.password || normalizedVendor.password || "",
       serviceType: normalizedVendor.serviceType,
       serviceTypes: normalizedVendor.serviceTypes.join(", "),
       states: normalizedVendor.states.join(", "),
@@ -1150,6 +1368,8 @@ function AppBuild03() {
       profilePhotoStatus: "Photo Upload Coming Soon",
     };
 
+    const nextUserId = editingUserId || createId("user");
+
     if (editingUserId) {
       updateAppState((current) => ({
         ...current,
@@ -1160,7 +1380,7 @@ function AppBuild03() {
     } else {
       updateAppState((current) => ({
         ...current,
-        users: [{ id: createId("user"), active: true, ...userRecord }, ...current.users],
+        users: [{ id: nextUserId, active: true, ...userRecord }, ...current.users],
       }));
     }
 
@@ -1178,7 +1398,9 @@ function AppBuild03() {
       internalNotes: "",
       role: ROLES.AMS_ADMIN,
     });
+    setSelectedTeamMemberId(nextUserId);
     setEditingUserId(null);
+    closeModal();
   };
 
   const startEditUser = (user) => {
@@ -1392,18 +1614,18 @@ function AppBuild03() {
 
   const saveProfile = () => {
     if (!currentUser) return;
-    updateAppState((current) => ({
-      ...current,
-      users: current.users.map((user) =>
+    updateAppState((current) => {
+      const nextUsers = current.users.map((user) =>
         user.id === currentUser.id
           ? {
               ...user,
               name: profileForm.name.trim(),
-              email: profileForm.email.trim(),
-              password: profileForm.password,
+              email: currentUser.role === ROLES.CREW ? user.email : profileForm.email.trim(),
+              password: profileForm.password || user.password || "Crew123",
               phone: profileForm.phone.trim(),
               jobTitle: profileForm.jobTitle.trim(),
-              companyName: profileForm.companyName.trim(),
+              companyName:
+                currentUser.role === ROLES.CREW ? user.companyName : profileForm.companyName.trim(),
               streetAddress: profileForm.streetAddress.trim(),
               city: profileForm.city.trim(),
               state: profileForm.state.trim().toUpperCase(),
@@ -1418,8 +1640,41 @@ function AppBuild03() {
               }),
             }
           : user
-      ),
-    }));
+      );
+
+      if (currentUser.role === ROLES.CREW && currentCrewRecord) {
+        return {
+          ...current,
+          users: nextUsers,
+          vendors: current.vendors.map((vendor) =>
+            vendor.id === currentCrewRecord.id
+              ? {
+                  ...vendor,
+                  contactName: profileForm.name.trim(),
+                  phone: profileForm.phone.trim(),
+                  password: profileForm.password || vendor.password || "Crew123",
+                }
+              : vendor
+          ),
+          companyProfiles: {
+            ...(current.companyProfiles || {}),
+            vendors: {
+              ...(current.companyProfiles?.vendors || {}),
+              [currentCrewRecord.id]: {
+                ...(current.companyProfiles?.vendors?.[currentCrewRecord.id] || {}),
+                contactName: profileForm.name.trim(),
+                phone: profileForm.phone.trim(),
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        ...current,
+        users: nextUsers,
+      };
+    });
   };
 
   const saveCompanyProfile = () => {
@@ -1784,11 +2039,13 @@ function AppBuild03() {
   const saveSelectedJobSell = () => {
     if (!selectedJob) return;
     saveJobSell(selectedJob.id, jobSellForm);
+    setEditingJobSellId(null);
   };
 
   const saveAccountingSell = () => {
     if (!selectedInvoiceJob) return;
     saveJobSell(selectedInvoiceJob.id, accountingSellForm);
+    setEditingAccountingSellJobId(null);
   };
 
   const saveInvoice = () => {
@@ -2010,6 +2267,17 @@ function AppBuild03() {
   const selectedProposal = appState.proposals.find((proposal) => proposal.id === selectedProposalId) || filteredProposals[0] || null;
   const selectedInvoice = appState.invoices.find((invoice) => invoice.id === selectedInvoiceId) || filteredInvoices[0] || null;
   const selectedInvoiceJob = selectedInvoice ? appState.jobs.find((job) => job.id === selectedInvoice.jobId) || null : null;
+  const amsTeamMembers = sortByNewest(
+    appState.users.filter((user) => AMS_ROLES.includes(user.role)),
+    "name"
+  );
+  const weatherSummaryConfig = [
+    { key: "active", label: "Active Event" },
+    { key: "watch_24", label: "24 Hour Watch" },
+    { key: "watch_48", label: "48 Hour Watch" },
+    { key: "watch_72", label: "72 Hour Watch" },
+    { key: "inactive", label: "Inactive / No Threat" },
+  ];
   const selectedWorkOrderProposals = selectedWorkOrder
     ? sortByNewest(appState.proposals.filter((proposal) => proposal.workOrderId === selectedWorkOrder.id), "submittedAt")
     : [];
@@ -2090,7 +2358,7 @@ function AppBuild03() {
         total: "",
         invoiceDate: "",
         dueDate: "",
-        terms: "Net 15",
+        terms: "Net 30",
         notes: "",
         status: "Submitted",
         lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
@@ -2103,7 +2371,7 @@ function AppBuild03() {
       total: selectedInvoice.total || selectedInvoice.amount || "",
       invoiceDate: selectedInvoice.invoiceDate || "",
       dueDate: selectedInvoice.dueDate || "",
-      terms: selectedInvoice.terms || "Net 15",
+      terms: selectedInvoice.terms || "Net 30",
       notes: selectedInvoice.notes || "",
       status: selectedInvoice.status || "Submitted",
       lineItems: selectedInvoice.lineItems?.length
@@ -2119,6 +2387,12 @@ function AppBuild03() {
   useEffect(() => {
     setAccountingSellForm(getJobSellValue(selectedInvoiceJob));
   }, [selectedInvoiceJob]);
+
+  useEffect(() => {
+    if (activeScreen !== "weather") return;
+    setWeatherCommandState(buildWeatherThreatSnapshot(appState.sites || []));
+    setWeatherLoaded(true);
+  }, [activeScreen, appState.sites]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -2160,6 +2434,10 @@ function AppBuild03() {
     { key: "vendors", label: SCREEN_LABELS.vendors, onClick: () => openScreen("vendors") },
     { key: "proposals", label: "Proposals", onClick: () => openScreen("proposals") },
   ];
+  const weatherSummary = weatherSummaryConfig.map((item) => ({
+    ...item,
+    value: weatherCommandState.filter((site) => site.status === item.key).length,
+  }));
 
   const renderProposalDecision = (proposal, workOrder) => {
     if (!proposal) {
@@ -2213,24 +2491,16 @@ function AppBuild03() {
     <div className="screen-grid">
       <TopActionBar actions={topActions} />
       <div className="ams-dashboard-grid">
-        <div className="dashboard-side-stack">
-          <PageSection title="Operations Snapshot">
-            <StatGrid items={[
-              { label: "Open Work Orders", value: openWorkOrders.length, onClick: () => openScreen("workOrders") },
-              { label: "Proposal Opportunities", value: proposalOpportunities.length, onClick: () => openScreen("proposals") },
-              { label: "Active Jobs", value: appState.jobs.filter((entry) => entry.status !== "Completed").length, onClick: () => openScreen("jobs") },
-              { label: "Proposals Awaiting Review", value: proposalsAwaitingDecision.length, onClick: () => openScreen("proposals") },
-              { label: "Invoices Awaiting Review", value: invoicesAwaitingReview.length, onClick: () => openScreen("accounting") },
-              { label: "Paid Invoices", value: paidInvoices.length, onClick: () => openScreen("accounting") },
-            ]} />
-          </PageSection>
-          <PageSection title="Weather">
-            <button className="weather-card" onClick={() => showPlaceholder("Weather integration will be added in a later build.")}>
-              <div className="weather-icon">Partly Sunny</div>
-              <div><strong>Foxboro, MA</strong><p>Weather integration and alerts are reserved for a later build.</p></div>
-            </button>
-          </PageSection>
-        </div>
+        <PageSection title="Operations Snapshot">
+          <StatGrid items={[
+            { label: "Open Work Orders", value: openWorkOrders.length, onClick: () => openScreen("workOrders") },
+            { label: "Proposal Opportunities", value: proposalOpportunities.length, onClick: () => openScreen("proposals") },
+            { label: "Active Jobs", value: appState.jobs.filter((entry) => entry.status !== "Completed").length, onClick: () => openScreen("jobs") },
+            { label: "Proposals Awaiting Review", value: proposalsAwaitingDecision.length, onClick: () => openScreen("proposals") },
+            { label: "Invoices Awaiting Review", value: invoicesAwaitingReview.length, onClick: () => openScreen("accounting") },
+            { label: "Paid Invoices", value: paidInvoices.length, onClick: () => openScreen("accounting") },
+          ]} />
+        </PageSection>
         <PageSection title="Command Map">
           <CommandMap sites={appState.sites} selectedSiteId={selectedSite?.id} onSelectSite={setSelectedSite} />
           <SiteDetailsCard site={selectedSite} relatedWorkOrderCount={selectedSite ? appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length : 0} />
@@ -2412,10 +2682,10 @@ function AppBuild03() {
 
   const sitesScreen = (
     <div className="screen-grid">
-      <PageSection title="Sites" action={<button className="primary-button" onClick={() => { setEditingSiteId(null); setSiteForm({ name: "", streetAddress: "", city: "", state: "", zip: "", internalNotes: "", assignedVendorId: "" }); openModal("site"); }}>Create Site</button>}>
+      <PageSection title="Sites" action={<button className="primary-button" onClick={() => openModal("site")}>Create Site</button>}>
         <SplitView
-          list={<div className="list-stack"><SearchBar value={siteSearch} onChange={setSiteSearch} placeholder="Search sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "address", label: "Address", render: (row) => row.address }, { key: "assigned", label: "Assigned Crew", render: (row) => row.assignedVendorName || "Unassigned" }, { key: "state", label: "State", render: (row) => row.state }]} rows={filteredSites} selectedRowId={appState.ui.selectedSiteId} onRowClick={(row) => setSelectedSite(row.id)} emptyTitle="No sites" emptyText="Add a site to start routing work orders." /></div></div>}
-          detail={selectedSite ? <div className="detail-stack"><SiteDetailsCard site={selectedSite} relatedWorkOrderCount={appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length} /><div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Street Address</span><p>{selectedSite.streetAddress || "Not set"}</p></div><div><span className="detail-label">City</span><p>{selectedSite.city || "Not set"}</p></div><div><span className="detail-label">State</span><p>{selectedSite.state || "Not set"}</p></div><div><span className="detail-label">ZIP Code</span><p>{selectedSite.zip || "Not set"}</p></div><div><span className="detail-label">Assigned Crew</span><p>{selectedSite.assignedVendorName || "Unassigned"}</p></div><div><span className="detail-label">Crew Contact</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.contactName || "Not set"}</p></div><div><span className="detail-label">Crew Phone</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone || "Not set"}</p></div><div><span className="detail-label">Crew Email</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.email || "Not set"}</p></div></div></div><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>{selectedSite.siteMapStatus}</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>{selectedSite.geoFenceStatus}</p></article></div><PageSection title="Site Service Log"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "date", label: "Date of Service", render: (row) => formatDate(row.completedAt) }, { key: "service", label: "Service Performed", render: (row) => row.serviceType }, { key: "vendor", label: "Crew", render: (row) => row.vendorName }, { key: "start", label: "Start Time", render: () => "Not tracked yet" }, { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedAt) }, { key: "scope", label: "Scope", render: (row) => row.description || "No scope notes" }, { key: "wo", label: "AMS Work Order", render: (row) => row.workOrder?.amsWorkOrderNumber || "Not available" }, { key: "invoice", label: "Invoice Status", render: (row) => row.invoice?.status || "No invoice" }]} rows={selectedSiteServiceLog} emptyTitle="No site service history" emptyText="Completed services for this site will appear here." /></div></PageSection><div className="form-actions"><button className="secondary-button" onClick={() => startEditSite(selectedSite)}>Edit Site</button><button className="secondary-button danger-button" onClick={() => removeSite(selectedSite.id)}>Remove Site</button></div></div> : <EmptyState title="No site selected" text="Select a site to view details." />}
+          list={<div className="list-stack"><SearchBar value={siteSearch} onChange={setSiteSearch} placeholder="Search sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "address", label: "Address", render: (row) => row.address }, { key: "assigned", label: "Primary Assigned Vendor", render: (row) => row.assignedVendorName || "Unassigned" }, { key: "state", label: "State", render: (row) => row.state }]} rows={filteredSites} selectedRowId={appState.ui.selectedSiteId} onRowClick={(row) => setSelectedSite(row.id)} emptyTitle="No sites" emptyText="Add a site to start routing work orders." /></div></div>}
+          detail={selectedSite ? <div className="detail-stack"><SiteDetailsCard site={selectedSite} relatedWorkOrderCount={appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length} /><div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Street Address</span><p>{selectedSite.streetAddress || "Not set"}</p></div><div><span className="detail-label">City</span><p>{selectedSite.city || "Not set"}</p></div><div><span className="detail-label">State</span><p>{selectedSite.state || "Not set"}</p></div><div><span className="detail-label">ZIP Code</span><p>{selectedSite.zip || "Not set"}</p></div><div><span className="detail-label">Primary Assigned Vendor</span><p>{selectedSite.assignedVendorName || "Unassigned"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedSite.assignedCrewContactName || normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.contactName || "Not set"}</p></div><div><span className="detail-label">Vendor Phone</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone || "Not set"}</p></div><div><span className="detail-label">Vendor Email</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.email || "Not set"}</p></div></div></div><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>{selectedSite.siteMapStatus}</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>{selectedSite.geoFenceStatus}</p></article></div><PageSection title="Site Service Log"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "date", label: "Date of Service", render: (row) => formatDate(row.completedAt) }, { key: "service", label: "Service Performed", render: (row) => row.serviceType }, { key: "vendor", label: "Vendor", render: (row) => row.vendorName }, { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) }, { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedAt) }, { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" }, { key: "wo", label: "AMS Work Order", render: (row) => row.workOrder?.amsWorkOrderNumber || "Not available" }, { key: "invoice", label: "Invoice Status", render: (row) => row.invoice?.status || "No invoice" }]} rows={selectedSiteServiceLog} emptyTitle="No site service history" emptyText="Completed services for this site will appear here." /></div></PageSection><div className="form-actions"><button className="secondary-button" onClick={() => startEditSite(selectedSite)}>Edit Site</button><button className="secondary-button danger-button" onClick={() => removeSite(selectedSite.id)}>Remove Site</button></div></div> : <EmptyState title="No site selected" text="Select a site to view details." />}
         />
       </PageSection>
     </div>
@@ -2423,10 +2693,10 @@ function AppBuild03() {
 
   const crewsScreen = (
     <div className="screen-grid">
-      <PageSection title="Crews" action={<button className="primary-button" onClick={() => { setEditingVendorId(null); setVendorForm({ name: "", companyName: "", streetAddress: "", city: "", state: "", zip: "", contactName: "", phone: "", email: "", serviceType: "", serviceTypes: "", states: "", internalNotes: "" }); openModal("vendor"); }}>Create Crew</button>}>
+      <PageSection title="Vendors" action={<button className="primary-button" onClick={() => openModal("vendor")}>Add Vendor</button>}>
         <SplitView
-          list={<div className="list-stack"><SearchBar value={crewSearch} onChange={setCrewSearch} placeholder="Search crews" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Crew", render: (row) => row.name }, { key: "company", label: "Company", render: (row) => row.companyName || row.name }, { key: "serviceType", label: "Primary Service", render: (row) => row.serviceType }, { key: "states", label: "States", render: (row) => row.states.join(", ") }, { key: "status", label: "Status", render: (row) => (row.active ? "Active" : "Inactive") }]} rows={filteredCrews} selectedRowId={selectedCrew?.id} onRowClick={(row) => setSelectedCrewId(row.id)} emptyTitle="No crews" emptyText="Add a crew before assigning jobs." /></div></div>}
-          detail={selectedCrew ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrew.name}</strong><p>{selectedCrew.companyName || selectedCrew.serviceType}</p></div><StatusBadge value={selectedCrew.active ? "active" : "inactive"} label={selectedCrew.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Company Name</span><p>{selectedCrew.companyName || "Not set"}</p></div><div><span className="detail-label">Point of Contact</span><p>{selectedCrew.contactName || "Not set"}</p></div><div><span className="detail-label">Phone</span><p>{selectedCrew.phone || "Not set"}</p></div><div><span className="detail-label">Email</span><p>{selectedCrew.email || "Not set"}</p></div><div><span className="detail-label">Address</span><p>{selectedCrew.address || "Not set"}</p></div><div><span className="detail-label">Service Types</span><p>{selectedCrew.serviceTypes.join(", ")}</p></div><div><span className="detail-label">Coverage</span><p>{selectedCrew.states.join(", ") || "Not set"}</p></div><div><span className="detail-label">Linked User</span><p>{selectedCrew.userId || "Not linked"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedCrew.internalNotes || "No internal notes"}</p></div></div><div className="form-actions"><button className="secondary-button" onClick={() => startEditVendor(selectedCrew)}>Edit Crew</button><button className="secondary-button" onClick={() => toggleVendorActive(selectedCrew.id)}>{selectedCrew.active ? "Deactivate" : "Activate"}</button></div></div> : <EmptyState title="No crew selected" text="Select a crew to view details." />}
+          list={<div className="list-stack"><SearchBar value={crewSearch} onChange={setCrewSearch} placeholder="Search vendors" /><div className="list-scroll"><DataTable columns={[{ key: "company", label: "Vendor Company", render: (row) => row.companyName || row.name }, { key: "contact", label: "Vendor Contact", render: (row) => row.contactName || "Not set" }, { key: "serviceType", label: "Primary Service", render: (row) => row.serviceType }, { key: "states", label: "States", render: (row) => row.states.join(", ") }, { key: "status", label: "Status", render: (row) => (row.active ? "Active" : "Inactive") }]} rows={filteredCrews} selectedRowId={selectedCrew?.id} onRowClick={(row) => setSelectedCrewId(row.id)} emptyTitle="No vendors" emptyText="Add a vendor before assigning jobs." /></div></div>}
+          detail={selectedCrew ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrew.companyName || selectedCrew.name}</strong><p>{selectedCrew.serviceType}</p></div><StatusBadge value={selectedCrew.active ? "active" : "inactive"} label={selectedCrew.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Vendor Company</span><p>{selectedCrew.companyName || "Not set"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedCrew.contactName || "Not set"}</p></div><div><span className="detail-label">Phone</span><p>{selectedCrew.phone || "Not set"}</p></div><div><span className="detail-label">Email</span><p>{selectedCrew.email || "Not set"}</p></div><div><span className="detail-label">Address</span><p>{selectedCrew.address || "Not set"}</p></div><div><span className="detail-label">Service Types</span><p>{selectedCrew.serviceTypes.join(", ")}</p></div><div><span className="detail-label">Coverage</span><p>{selectedCrew.states.join(", ") || "Not set"}</p></div><div><span className="detail-label">Linked Login</span><p>{selectedCrew.email || "Not linked"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedCrew.internalNotes || "No internal notes"}</p></div></div><div className="form-actions"><button className="secondary-button" onClick={() => startEditVendor(selectedCrew)}>Edit Vendor</button><button className="secondary-button" onClick={() => toggleVendorActive(selectedCrew.id)}>{selectedCrew.active ? "Deactivate" : "Activate"}</button></div></div> : <EmptyState title="No vendor selected" text="Select a vendor to view details." />}
         />
       </PageSection>
     </div>
@@ -2437,7 +2707,7 @@ function AppBuild03() {
       <PageSection title="Jobs" action={<button className="primary-button" onClick={() => openModal("job")}>Create Job</button>}>
         <SplitView
           list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
-          detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedJob.price)}</p></div>{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <div className="detail-stack"><InputRow><Field label="AMS Sell Price (Optional)"><input value={jobSellForm} onChange={(event) => setJobSellForm(event.target.value)} placeholder="Enter internal sell" /></Field></InputRow><div className="form-actions"><button className="secondary-button" onClick={saveSelectedJobSell}>Save Sell</button></div></div> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
+          detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedJob.price)}</p></div>{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{isAmsViewer ? <SellControl sellValue={jobSellForm} pricingStatus={getPricingStatus(selectedJob)} editing={editingJobSellId === selectedJob.id || getPricingStatus(selectedJob) !== "set"} onStartEdit={() => setEditingJobSellId(selectedJob.id)} onChange={setJobSellForm} onSave={saveSelectedJobSell} /> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
         />
       </PageSection>
     </div>
@@ -2448,7 +2718,7 @@ function AppBuild03() {
       <PageSection title="Work Orders" action={<button className="primary-button" onClick={() => openModal("workOrder")}>Create Work Order</button>}>
           <SplitView
             list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={workOrderSearch} onChange={setWorkOrderSearch} placeholder="Search work orders" /><FilterRow label="Filter" value={workOrderFilter} options={WORK_ORDER_FILTERS} onChange={setWorkOrderFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "reference", label: "AMS Ref", render: (row) => row.amsWorkOrderNumber }, ...(showExternalWorkOrder ? [{ key: "external", label: "External Ref", render: (row) => row.externalWorkOrderNumber || "Not set" }] : []), { key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredWorkOrders} selectedRowId={selectedWorkOrder?.id} onRowClick={(row) => setSelectedWorkOrderId(row.id)} emptyTitle="No work orders" emptyText="New work orders will appear here." /></div></div>}
-            detail={selectedWorkOrder ? <div className="detail-stack"><div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{selectedWorkOrder.siteName}</strong><p>{selectedWorkOrder.description}</p></div><div className="proposal-summary-badges"><ProposalStateBadge value={selectedWorkOrder.proposalState} /><StatusBadge value={selectedWorkOrder.status} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{selectedWorkOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{selectedWorkOrder.serviceType}</p></div><div><span className="detail-label">Assigned Crew</span><p>{selectedWorkOrder.assignedVendorName || "Not assigned"}</p></div><div><span className="detail-label">Job Link</span><p>{selectedWorkOrder.jobId || "No job created yet"}</p></div><div><span className="detail-label">Proposal Requested</span><p>{formatDate(selectedWorkOrder.proposalRequestedAt)}</p></div><div><span className="detail-label">Proposal Awarded</span><p>{formatDate(selectedWorkOrder.proposalAwardedAt)}</p></div></div><InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderDetailForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Before / After Photos Required"><select value={workOrderDetailForm.requireBeforeAfterPhotos ? "yes" : "no"} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.value === "yes" }))}><option value="no">No</option><option value="yes">Yes</option></select></Field></InputRow><div className="form-actions"><button className="secondary-button" onClick={saveWorkOrderDetail}>Save Detail Updates</button><button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button>{selectedWorkOrder.proposalRequired ? <button className="primary-button" onClick={() => openScreen("proposals")}>Open Proposal Review</button> : null}</div></div>{selectedWorkOrder.proposalRequired ? <><PageSection title="Proposal Review List"><DataTable columns={[{ key: "vendor", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "submittedPrice", label: "Submitted Price", render: (row) => formatMoney(row.submittedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }]} rows={selectedWorkOrderProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Crew proposals will appear here." /></PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedWorkOrder)}</PageSection></> : <div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Assignment</span><div className="assignment-cell"><select value={jobAssignment[selectedWorkOrder.id] || selectedWorkOrder.assignedVendorId || ""} disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onChange={(event) => setJobAssignment((current) => ({ ...current, [selectedWorkOrder.id]: event.target.value }))}><option value="">Select crew</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select><button className="secondary-button" disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onClick={() => assignVendorToWorkOrder(selectedWorkOrder.id)}>Assign + Create Job</button></div></div><div><span className="detail-label">Work Order Status</span><select value={selectedWorkOrder.status} onChange={(event) => updateWorkOrderStatus(selectedWorkOrder.id, event.target.value)}>{WORK_ORDER_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div></div>}</div> : <EmptyState title="No work order selected" text="Select a work order to review details." />}
+            detail={selectedWorkOrder ? <div className="detail-stack"><div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{selectedWorkOrder.siteName}</strong><p>{selectedWorkOrder.description}</p></div><div className="proposal-summary-badges"><ProposalStateBadge value={selectedWorkOrder.proposalState} /><StatusBadge value={selectedWorkOrder.status} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{selectedWorkOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{selectedWorkOrder.serviceType}</p></div><div><span className="detail-label">Primary Assigned Vendor</span><p>{selectedWorkOrder.assignedVendorName || "Not assigned"}</p></div><div><span className="detail-label">Job Link</span><p>{selectedWorkOrder.jobId || "No job created yet"}</p></div><div><span className="detail-label">Proposal Requested</span><p>{formatDate(selectedWorkOrder.proposalRequestedAt)}</p></div><div><span className="detail-label">Proposal Awarded</span><p>{formatDate(selectedWorkOrder.proposalAwardedAt)}</p></div></div><InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderDetailForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Before / After Photos Required"><select value={workOrderDetailForm.requireBeforeAfterPhotos ? "yes" : "no"} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.value === "yes" }))}><option value="no">No</option><option value="yes">Yes</option></select></Field></InputRow><div className="form-actions"><button className="secondary-button" onClick={saveWorkOrderDetail}>Save Detail Updates</button><button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button>{selectedWorkOrder.proposalRequired ? <button className="primary-button" onClick={() => openScreen("proposals")}>Open Proposal Review</button> : null}</div></div>{selectedWorkOrder.proposalRequired ? <><PageSection title="Proposal Review List"><DataTable columns={[{ key: "vendor", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "submittedPrice", label: "Submitted Price", render: (row) => formatMoney(row.submittedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }]} rows={selectedWorkOrderProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Crew proposals will appear here." /></PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedWorkOrder)}</PageSection></> : <div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Assignment</span><div className="assignment-cell"><select value={jobAssignment[selectedWorkOrder.id] || selectedWorkOrder.assignedVendorId || ""} disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onChange={(event) => setJobAssignment((current) => ({ ...current, [selectedWorkOrder.id]: event.target.value }))}><option value="">Select vendor</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select><button className="secondary-button" disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onClick={() => assignVendorToWorkOrder(selectedWorkOrder.id)}>Assign + Create Job</button></div></div><div><span className="detail-label">Work Order Status</span><select value={selectedWorkOrder.status} onChange={(event) => updateWorkOrderStatus(selectedWorkOrder.id, event.target.value)}>{WORK_ORDER_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div></div>}</div> : <EmptyState title="No work order selected" text="Select a work order to review details." />}
         />
       </PageSection>
     </div>
@@ -2470,8 +2740,125 @@ function AppBuild03() {
       <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Submitted", value: appState.invoices.filter((invoice) => invoice.status === "Submitted").length }, { label: "Under Review", value: appState.invoices.filter((invoice) => invoice.status === "Under Review").length }, { label: "Approved", value: appState.invoices.filter((invoice) => invoice.status === "Approved").length }, { label: "Paid", value: appState.invoices.filter((invoice) => invoice.status === "Paid").length }]} /></PageSection>
       <SplitView
         list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(row.price) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
-        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <div className="detail-stack"><InputRow><Field label="AMS Sell Price (Optional)"><input value={accountingSellForm} onChange={(event) => setAccountingSellForm(event.target.value)} disabled={selectedInvoice.status === "Paid"} placeholder="Enter internal sell" /></Field></InputRow><div className="form-actions"><button className="secondary-button" onClick={saveAccountingSell} disabled={selectedInvoice.status === "Paid"}>Save Sell</button></div></div> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Under Review")} disabled={selectedInvoice.status === "Paid"}>Mark Under Review</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Mark Approved</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
+        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Under Review")} disabled={selectedInvoice.status === "Paid"}>Mark Under Review</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Mark Approved</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
       />
+    </div>
+  );
+
+  const amsTeamScreen = (
+    <div className="screen-grid">
+      <PageSection
+        title="AMS Team"
+        action={
+          canEditCrewIdentity(currentUser) ? (
+            <button className="primary-button" onClick={() => openModal("amsTeammate")}>
+              Add AMS Teammate
+            </button>
+          ) : null
+        }
+      >
+        <SplitView
+          list={
+            <div className="list-stack">
+              <div className="list-scroll">
+                <DataTable
+                  columns={[
+                    { key: "name", label: "Full Name", render: (row) => row.name },
+                    { key: "title", label: "Job Title", render: (row) => row.jobTitle || "Not set" },
+                    { key: "email", label: "Email", render: (row) => row.email },
+                    { key: "phone", label: "Phone", render: (row) => row.phone || "Not set" },
+                    { key: "role", label: "Role", render: (row) => row.role },
+                  ]}
+                  rows={amsTeamMembers}
+                  selectedRowId={selectedTeamMember?.id}
+                  onRowClick={(row) => {
+                    setSelectedTeamMemberId(row.id);
+                    setActiveModal("teamProfile");
+                  }}
+                  emptyTitle="No team members"
+                  emptyText="AMS teammates added here will appear in the directory."
+                />
+              </div>
+            </div>
+          }
+          detail={
+            <div className="detail-stack">
+              <div className="detail-card">
+                <span className="detail-label">AMS Team Chat</span>
+                <strong>AMS Team Chat Coming Soon</strong>
+                <p className="detail-muted">
+                  Direct team messaging will be added later with backend support.
+                </p>
+              </div>
+              <div className="detail-card">
+                <span className="detail-label">Directory</span>
+                <p className="detail-muted">
+                  Click a teammate row to open the profile card with direct contact details.
+                </p>
+              </div>
+            </div>
+          }
+        />
+      </PageSection>
+    </div>
+  );
+
+  const weatherScreen = (
+    <div className="screen-grid weather-screen">
+      <PageSection title="Weather Command">
+        <div className="weather-threat-strip">
+          {weatherSummary.map((item) => (
+            <article key={item.key} className={`weather-threat-card ${item.key}`}>
+              <span className="detail-label">{item.label}</span>
+              <strong>{item.value}</strong>
+            </article>
+          ))}
+        </div>
+      </PageSection>
+      <div className="weather-layout">
+        <PageSection title="Threat Map">
+          <div className="weather-map">
+            {weatherCommandState.map((site, index) => (
+              <button
+                key={site.siteId}
+                className={`weather-ping marker-${(index % 5) + 1} ${site.status}`}
+                type="button"
+              >
+                <span>{site.siteName}</span>
+              </button>
+            ))}
+          </div>
+        </PageSection>
+        <PageSection title="Weather Detail">
+          <div className="detail-stack">
+            {weatherCommandState.map((site) => (
+              <article key={site.siteId} className="detail-card">
+                <div className="proposal-summary-top">
+                  <div>
+                    <strong>{site.siteName}</strong>
+                    <p>{site.serviceType}</p>
+                  </div>
+                  <StatusBadge
+                    value={site.status}
+                    label={
+                      site.status === "active"
+                        ? "Active Event"
+                        : site.status === "watch_24"
+                        ? "24 Hour Watch"
+                        : site.status === "watch_48"
+                        ? "48 Hour Watch"
+                        : site.status === "watch_72"
+                        ? "72 Hour Watch"
+                        : "No Threat"
+                    }
+                  />
+                </div>
+                <p className="detail-muted">{site.summary}</p>
+              </article>
+            ))}
+          </div>
+        </PageSection>
+      </div>
     </div>
   );
 
@@ -2481,13 +2868,13 @@ function AppBuild03() {
         <div className="detail-stack">
           <div className="profile-summary"><div><strong>{currentUser.name}</strong><p>{currentUser.email}</p></div><div className="status-pill active">{currentUser.role}</div></div>
           <article className="detail-card profile-photo-card"><span className="detail-label">Profile Photo</span><strong>Future Profile Picture</strong><p>{profileForm.profilePhotoStatus}</p><button className="secondary-button" onClick={() => showPlaceholder("Profile photo upload will be added in a later build.")}>Photo Upload Coming Soon</button></article>
-          <InputRow><Field label="Name"><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={profileForm.password} onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
+          <InputRow><Field label={currentUser.role === ROLES.CREW ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={currentUser.role === ROLES.CREW} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={profileForm.password} onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={currentUser.role === ROLES.CREW} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
           <div className="form-actions"><button className="primary-button" onClick={saveProfile}>Save Profile</button></div>
         </div>
       </PageSection>
       <PageSection title="Company Profile">
-        <InputRow><Field label="Company Name"><input value={companyProfileForm.companyName} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Contact Name"><input value={companyProfileForm.contactName} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone"><input value={companyProfileForm.phone} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email"><input value={companyProfileForm.email} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Address"><input value={companyProfileForm.address} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, address: event.target.value }))} /></Field><Field label="City"><input value={companyProfileForm.city} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={companyProfileForm.state} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={companyProfileForm.zip} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Billing / Remit Details"><textarea rows="4" value={companyProfileForm.billingDetails} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, billingDetails: event.target.value }))} /></Field></InputRow>
-        <div className="form-actions"><button className="primary-button" onClick={saveCompanyProfile}>Save Company Profile</button></div>
+        <InputRow><Field label="Company Name"><input value={companyProfileForm.companyName} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Contact Name"><input value={companyProfileForm.contactName} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone"><input value={companyProfileForm.phone} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email"><input value={companyProfileForm.email} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Address"><input value={companyProfileForm.address} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, address: event.target.value }))} /></Field><Field label="City"><input value={companyProfileForm.city} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={companyProfileForm.state} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={companyProfileForm.zip} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Billing / Remit Details"><textarea rows="4" value={companyProfileForm.billingDetails} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, billingDetails: event.target.value }))} /></Field></InputRow>
+        {currentUser.role === ROLES.CREW ? <p className="detail-muted">Company identity fields are read-only for Crew users in this build.</p> : <div className="form-actions"><button className="primary-button" onClick={saveCompanyProfile}>Save Company Profile</button></div>}
       </PageSection>
     </div>
   ) : null;
@@ -2504,12 +2891,14 @@ function AppBuild03() {
     if (activeScreen === "myInvoices") return <div className="screen-grid vendor-screen">{crewInvoicesSection}</div>;
     if (activeScreen === "availableWork") return <div className="screen-grid vendor-screen">{crewAvailableWorkSection}</div>;
     if (activeScreen === "users") return usersScreen;
+    if (activeScreen === "amsTeam") return amsTeamScreen;
     if (activeScreen === "sites") return sitesScreen;
     if (activeScreen === "vendors") return crewsScreen;
     if (activeScreen === "workOrders") return workOrdersScreen;
     if (activeScreen === "proposals") return proposalsScreen;
     if (activeScreen === "jobs") return jobsScreen;
     if (activeScreen === "accounting") return accountingScreen;
+    if (activeScreen === "weather") return weatherScreen;
     if (currentUser.role === ROLES.OWNER) return ownerDashboard;
     if (AMS_ROLES.includes(currentUser.role)) return amsDashboard;
     if (currentUser.role === ROLES.CREW && activeScreen === "dashboard") return crewDashboard;
@@ -2525,23 +2914,27 @@ function AppBuild03() {
       <Drawer open={drawerOpen} menuItems={DRAWER_MENUS[currentUser.role]} activeScreen={activeScreen} labels={SCREEN_LABELS} currentUser={currentUser} onNavigate={openScreen} onLogout={logout} onClose={() => setDrawerOpen(false)} />
       <div className="main-shell">
         <Header currentUser={currentUser} onOpenDrawer={() => setDrawerOpen(true)} onOpenNotifications={() => showPlaceholder("Notifications will be added in a later build.")} onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)} profileMenuOpen={profileMenuOpen} onNavigate={openScreen} onLogout={logout} />
-        <main className="content-shell"><div className="screen-header"><div><div className="eyebrow">Build 0.4</div><h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1></div></div>{renderScreen()}</main>
+        <main className="content-shell"><div className="screen-header"><div><div className="eyebrow">Version 0.5.6</div><h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1></div></div>{renderScreen()}</main>
       </div>
 
         <Modal open={activeModal === "workOrder"} title="Create Work Order" onClose={closeModal} footer={<div className="form-actions"><button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button><button className="primary-button" onClick={createWorkOrder}>Create Work Order</button></div>}>
           <div className="modal-reference">AMS Work Order Number: {nextWorkOrderNumber}</div>
-          <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Assign Crew Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></Field><Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field></InputRow>
+          <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Assign Vendor Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field></InputRow>
         <label className="checkbox-inline"><input type="checkbox" checked={workOrderForm.requireBeforeAfterPhotos} onChange={(event) => setWorkOrderForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.checked }))} />Require before and after photos</label>
       </Modal>
 
-      <Modal open={activeModal === "site"} title={editingSiteId ? "Edit Site" : "Create Site"} onClose={closeModal} footer={<button className="primary-button" onClick={saveSite}>{editingSiteId ? "Update Site" : "Add Site"}</button>}><InputRow><Field label="Site Name"><input value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Street Address"><input value={siteForm.streetAddress} onChange={(event) => setSiteForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={siteForm.city} onChange={(event) => setSiteForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={siteForm.state} maxLength={2} onChange={(event) => setSiteForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={siteForm.zip} onChange={(event) => setSiteForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Assigned Crew"><select value={siteForm.assignedVendorId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedVendorId: event.target.value }))}><option value="">Unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></Field><Field label="Internal Notes"><textarea rows="4" value={siteForm.internalNotes} onChange={(event) => setSiteForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>Upload Coming Soon</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>Geo Fence Setup Coming Soon</p></article></div></Modal>
+      <Modal open={activeModal === "site"} title={editingSiteId ? "Edit Site" : "Create Site"} onClose={closeModal} footer={<button className="primary-button" onClick={saveSite}>{editingSiteId ? "Update Site" : "Add Site"}</button>}><InputRow><Field label="Site Name"><input value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Street Address"><input value={siteForm.streetAddress} onChange={(event) => setSiteForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={siteForm.city} onChange={(event) => setSiteForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={siteForm.state} maxLength={2} onChange={(event) => setSiteForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={siteForm.zip} onChange={(event) => setSiteForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Primary Assigned Vendor"><select value={siteForm.assignedVendorId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedVendorId: event.target.value, assignedCrewContactId: "" }))}><option value="">Unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Crew Contact"><select value={siteForm.assignedCrewContactId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedCrewContactId: event.target.value }))}><option value="">Not set</option>{appState.users.filter((user) => user.role === ROLES.CREW && (!siteForm.assignedVendorId || normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId)?.userId === user.id)).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></Field><Field label="Internal Notes"><textarea rows="4" value={siteForm.internalNotes} onChange={(event) => setSiteForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>Upload Coming Soon</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>Geo Fence Setup Coming Soon</p></article></div></Modal>
 
-      <Modal open={activeModal === "vendor"} title={editingVendorId ? "Edit Crew" : "Create Crew"} onClose={closeModal} footer={<button className="primary-button" onClick={saveVendor}>{editingVendorId ? "Update Crew" : "Add Crew"}</button>}><InputRow><Field label="Crew Name"><input value={vendorForm.name} onChange={(event) => setVendorForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Company Name"><input value={vendorForm.companyName} onChange={(event) => setVendorForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={vendorForm.streetAddress} onChange={(event) => setVendorForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={vendorForm.city} onChange={(event) => setVendorForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={vendorForm.state} onChange={(event) => setVendorForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={vendorForm.zip} onChange={(event) => setVendorForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Point of Contact"><input value={vendorForm.contactName} onChange={(event) => setVendorForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone Number"><input value={vendorForm.phone} onChange={(event) => setVendorForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email Address"><input value={vendorForm.email} onChange={(event) => setVendorForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Primary Service Type"><select value={vendorForm.serviceType} onChange={(event) => setVendorForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Service Types"><input value={vendorForm.serviceTypes} onChange={(event) => setVendorForm((current) => ({ ...current, serviceTypes: event.target.value }))} placeholder="Snow Removal, Landscaping" /></Field><Field label="States"><input value={vendorForm.states} onChange={(event) => setVendorForm((current) => ({ ...current, states: event.target.value.toUpperCase() }))} placeholder="MA, RI" /></Field><Field label="Internal Notes"><textarea rows="4" value={vendorForm.internalNotes} onChange={(event) => setVendorForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow></Modal>
+      <Modal open={activeModal === "vendor"} title={editingVendorId ? "Edit Vendor" : "Create Vendor"} onClose={closeModal} footer={<button className="primary-button" onClick={saveVendor}>{editingVendorId ? "Update Vendor" : "Add Vendor"}</button>}><InputRow><Field label="Company Name"><input value={vendorForm.companyName} onChange={(event) => setVendorForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Point of Contact"><input value={vendorForm.contactName} onChange={(event) => setVendorForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone Number"><input value={vendorForm.phone} onChange={(event) => setVendorForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email Address"><input value={vendorForm.email} onChange={(event) => setVendorForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={vendorForm.password} onChange={(event) => setVendorForm((current) => ({ ...current, password: event.target.value }))} placeholder="Defaults to Crew123 if left blank" /></Field><Field label="Street Address"><input value={vendorForm.streetAddress} onChange={(event) => setVendorForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={vendorForm.city} onChange={(event) => setVendorForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={vendorForm.state} onChange={(event) => setVendorForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={vendorForm.zip} onChange={(event) => setVendorForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Primary Service Type"><select value={vendorForm.serviceType} onChange={(event) => setVendorForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Service Types"><input value={vendorForm.serviceTypes} onChange={(event) => setVendorForm((current) => ({ ...current, serviceTypes: event.target.value }))} placeholder="Snow Removal, Landscaping" /></Field><Field label="States"><input value={vendorForm.states} onChange={(event) => setVendorForm((current) => ({ ...current, states: event.target.value.toUpperCase() }))} placeholder="MA, RI" /></Field><Field label="Internal Notes"><textarea rows="4" value={vendorForm.internalNotes} onChange={(event) => setVendorForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow></Modal>
 
-      <Modal open={activeModal === "job"} title="Create Job" onClose={closeModal} footer={<button className="primary-button" onClick={createManualJob}>Create Job</button>}><InputRow><Field label="Work Order"><select value={jobCreateForm.workOrderId} onChange={(event) => setJobCreateForm((current) => ({ ...current, workOrderId: event.target.value }))}><option value="">Select work order</option>{appState.workOrders.filter((workOrder) => !appState.jobs.some((job) => job.workOrderId === workOrder.id)).map((workOrder) => <option key={workOrder.id} value={workOrder.id}>{workOrder.amsWorkOrderNumber} � {workOrder.siteName}</option>)}</select></Field><Field label="Crew"><select value={jobCreateForm.vendorId} onChange={(event) => setJobCreateForm((current) => ({ ...current, vendorId: event.target.value }))}><option value="">Select crew</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></Field><Field label="Price"><input value={jobCreateForm.price} onChange={(event) => setJobCreateForm((current) => ({ ...current, price: event.target.value }))} /></Field></InputRow></Modal>
+      <Modal open={activeModal === "job"} title="Create Job" onClose={closeModal} footer={<button className="primary-button" onClick={createManualJob}>Create Job</button>}><InputRow><Field label="Work Order"><select value={jobCreateForm.workOrderId} onChange={(event) => setJobCreateForm((current) => ({ ...current, workOrderId: event.target.value }))}><option value="">Select work order</option>{appState.workOrders.filter((workOrder) => !appState.jobs.some((job) => job.workOrderId === workOrder.id)).map((workOrder) => <option key={workOrder.id} value={workOrder.id}>{workOrder.amsWorkOrderNumber} - {workOrder.siteName}</option>)}</select></Field><Field label="Vendor"><select value={jobCreateForm.vendorId} onChange={(event) => setJobCreateForm((current) => ({ ...current, vendorId: event.target.value }))}><option value="">Select vendor</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Price"><input value={jobCreateForm.price} onChange={(event) => setJobCreateForm((current) => ({ ...current, price: event.target.value }))} /></Field></InputRow></Modal>
+      <Modal open={activeModal === "amsTeammate"} title="Add AMS Teammate" onClose={closeModal} footer={<button className="primary-button" onClick={saveUser}>Add Teammate</button>}><InputRow><Field label="Full Name"><input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone Number"><input value={userForm.phone} onChange={(event) => setUserForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={userForm.jobTitle} onChange={(event) => setUserForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={userForm.companyName} onChange={(event) => setUserForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={userForm.streetAddress} onChange={(event) => setUserForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={userForm.city} onChange={(event) => setUserForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={userForm.state} onChange={(event) => setUserForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={userForm.zip} onChange={(event) => setUserForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={userForm.internalNotes} onChange={(event) => setUserForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field><Field label="Role"><select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value }))}><option value={ROLES.AMS_ADMIN}>{ROLES.AMS_ADMIN}</option><option value={ROLES.AMS_MANAGER}>{ROLES.AMS_MANAGER}</option></select></Field></InputRow></Modal>
+      <Modal open={activeModal === "teamProfile"} title="AMS Teammate Profile" onClose={closeModal}>{selectedTeamMember ? <div className="detail-stack"><div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedTeamMember.name}</strong><p>{selectedTeamMember.jobTitle || selectedTeamMember.role}</p></div><StatusBadge value={selectedTeamMember.active ? "active" : "inactive"} label={selectedTeamMember.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Phone Number</span><p>{selectedTeamMember.phone ? <a href={`tel:${selectedTeamMember.phone}`}>{selectedTeamMember.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Email</span><p><a href={`mailto:${selectedTeamMember.email}`}>{selectedTeamMember.email}</a></p></div><div><span className="detail-label">Company Name</span><p>{selectedTeamMember.companyName || "Advanced Maintenance Services"}</p></div><div><span className="detail-label">Address</span><p>{selectedTeamMember.address || "Not set"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedTeamMember.internalNotes || "No internal notes."}</p></div></div></div></div> : <EmptyState title="No teammate selected" text="Choose a teammate from the directory." />}</Modal>
       <Modal open={Boolean(jobConfirmation)} title={jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"} onClose={() => setJobConfirmation(null)} footer={<div className="form-actions"><button className="secondary-button" onClick={() => setJobConfirmation(null)}>Cancel</button><button className="primary-button" onClick={confirmJobStatusChange}>{jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"}</button></div>}><p className="detail-muted">{jobConfirmation?.type === "start" ? "Are you on site and ready to start the job?" : "Are you sure this job is complete and the scope of work has been completed?"}</p></Modal>
     </div>
   );
 }
 
 export default AppBuild03;
+
+

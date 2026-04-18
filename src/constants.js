@@ -33,7 +33,6 @@ export const SERVICE_TYPES = [
 export const AMS_ROLES = [ROLES.AMS_ADMIN, ROLES.AMS_MANAGER];
 
 export const UNDER_CONSTRUCTION_SCREENS = new Set([
-  "weather",
   "settings",
   "customer",
   "operatorPortal",
@@ -42,6 +41,7 @@ export const UNDER_CONSTRUCTION_SCREENS = new Set([
 export const DRAWER_MENUS = {
   [ROLES.OWNER]: [
     "dashboard",
+    "amsTeam",
     "users",
     "sites",
     "vendors",
@@ -51,6 +51,7 @@ export const DRAWER_MENUS = {
   ],
   [ROLES.AMS_ADMIN]: [
     "dashboard",
+    "amsTeam",
     "workOrders",
     "proposals",
     "jobs",
@@ -62,6 +63,7 @@ export const DRAWER_MENUS = {
   ],
   [ROLES.AMS_MANAGER]: [
     "dashboard",
+    "amsTeam",
     "workOrders",
     "proposals",
     "jobs",
@@ -86,9 +88,10 @@ export const DRAWER_MENUS = {
 
 export const SCREEN_LABELS = {
   dashboard: "Dashboard",
+  amsTeam: "AMS Team",
   users: "Users",
   sites: "Sites",
-  vendors: "Crews",
+  vendors: "Vendors",
   workOrders: "Work Orders",
   proposals: "Proposals",
   jobs: "Jobs",
