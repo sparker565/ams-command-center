@@ -34,6 +34,7 @@ import {
   TopActionBar,
   UnderConstruction,
 } from "./components";
+import { signIn, signOutUser } from "./firebaseAuth";
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1064,24 +1065,8 @@ function AppBuild03() {
 
   const showPlaceholder = (message) => window.alert(message);
 
-  const handleLogin = (email, password) => {
-    // Future Firebase Auth can replace this credential check while keeping role routing intact.
-    const match = (appState.users || []).find(
-      (user) => {
-        const expectedPassword =
-          user.password || (user.role === ROLES.CREW ? "Crew123" : "");
-        return (
-          user.email.toLowerCase() === email.trim().toLowerCase() &&
-          expectedPassword === password &&
-          user.active
-        );
-      }
-    );
-
-    if (!match) {
-      window.alert("Invalid email or password.");
-      return;
-    }
+  const completeLocalLogin = (match) => {
+    if (!match) return false;
 
     updateAppState((current) => ({
       ...current,
@@ -1095,14 +1080,64 @@ function AppBuild03() {
       },
     }));
     setLoginForm({ email: "", password: "" });
+    return true;
+  };
+
+  const findLocalLoginMatch = (email, password) =>
+    (appState.users || []).find((user) => {
+      const expectedPassword =
+        user.password || (user.role === ROLES.CREW ? "Crew123" : "");
+      return (
+        user.email.toLowerCase() === email.trim().toLowerCase() &&
+        expectedPassword === password &&
+        user.active
+      );
+    }) || null;
+
+  const handleLogin = async (email, password) => {
+    const match = (appState.users || []).find(
+      (user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.active
+    );
+
+    const firebaseResult = await signIn(email.trim(), password);
+    if (firebaseResult.user && match) {
+      completeLocalLogin(match);
+      return;
+    }
+
+    const localMatch = findLocalLoginMatch(email, password);
+    if (localMatch) {
+      completeLocalLogin(localMatch);
+      return;
+    }
+
+    if (firebaseResult.user && !match) {
+      await signOutUser();
+    }
+
+    if (!match && !firebaseResult.user) {
+      window.alert("Invalid email or password.");
+      return;
+    }
+    window.alert("This account is authenticated but is not mapped to a local AMS role yet.");
   };
 
   const handleDemoLogin = (type) => {
-    if (type === "ams") return handleLogin("admin@amsdemo.local", "Admin123");
-    return handleLogin("crew@amsdemo.local", "Crew123");
+    const demoMatch =
+      type === "ams"
+        ? findLocalLoginMatch("admin@amsdemo.local", "Admin123")
+        : findLocalLoginMatch("crew@amsdemo.local", "Crew123");
+
+    if (!demoMatch) {
+      window.alert("Demo login is unavailable.");
+      return;
+    }
+
+    completeLocalLogin(demoMatch);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await signOutUser();
     updateAppState((current) => ({
       ...current,
       ui: {
