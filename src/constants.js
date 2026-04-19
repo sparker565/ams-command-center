@@ -69,7 +69,7 @@ export const DRAWER_MENUS = {
     "reports",
     "settings",
   ],
-  [ROLES.CREW]: ["dashboard", "myJobs", "completedJobs", "profile"],
+  [ROLES.CREW]: ["dashboard", "myJobs", "completedJobs", "myInvoices", "profile"],
   [ROLES.OPERATOR]: ["dashboard", "settings"],
   [ROLES.CUSTOMER]: ["dashboard", "settings"],
 };

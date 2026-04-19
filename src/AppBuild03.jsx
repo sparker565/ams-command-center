@@ -551,6 +551,7 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
 
 function buildInvoiceRecord({ job, workOrder, currentUser }) {
   const amount = job.price || "";
+  const internalReference = workOrder?.amsWorkOrderNumber || `INV-${String(job.id).slice(-6)}`;
   return {
     id: createId("invoice"),
     jobId: job.id,
@@ -563,11 +564,11 @@ function buildInvoiceRecord({ job, workOrder, currentUser }) {
     jobStatus: job.status,
     amount,
     total: amount,
-    invoiceNumber: "",
+    invoiceNumber: internalReference,
     invoiceDate: new Date().toISOString(),
     dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     terms: "Net 30",
-    submittedAt: "",
+    submittedAt: new Date().toISOString(),
     submittedBy: currentUser?.name || "",
     status: "Invoice Submitted",
     notes: "",
@@ -2312,7 +2313,8 @@ function AppBuild03() {
   };
 
   const createInvoiceForJob = (job) => {
-    if (!currentUser) return;
+    if (!currentUser || currentUser.role !== ROLES.CREW || !currentCrewRecord) return;
+    if (job.vendorId !== currentCrewRecord.id) return;
     if (getInvoiceForJob(appState.invoices, job.id)) {
       window.alert("An invoice already exists for this job.");
       return;
@@ -2331,6 +2333,7 @@ function AppBuild03() {
     };
     updateAppState((current) => ({ ...current, invoices: [invoice, ...current.invoices] }));
     setSelectedInvoiceId(invoice.id);
+    openScreen("myInvoices");
   };
 
   const openJobConfirmation = (type, jobId) => {
@@ -2440,6 +2443,9 @@ function AppBuild03() {
           .filter((job) => job.vendorId === currentCrewRecord.id && job.status === "Completed")
           .map((job) => ({ job, invoice: getInvoiceForJob(appState.invoices, job.id) }))
       : [];
+  const crewSubmittedInvoices = [...crewInvoices.filter(({ invoice }) => invoice).map(({ job, invoice }) => ({ id: invoice.id, job, invoice }))].sort(
+    (a, b) => new Date(b.invoice?.submittedAt || 0).getTime() - new Date(a.invoice?.submittedAt || 0).getTime()
+  );
   const crewOpenInvoices = crewInvoices.filter(({ invoice }) => invoice && invoice.status !== "Paid");
   const crewPaidInvoices = crewInvoices.filter(({ invoice }) => invoice?.status === "Paid");
 
@@ -2922,6 +2928,7 @@ function AppBuild03() {
                 <DataTable
                   columns={[
                     { key: "site", label: "Site Name", render: (row) => row.siteName },
+                    { key: "reference", label: "Job / WO Ref", render: (row) => `${row.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
                     { key: "serviceDate", label: "Service Date", render: (row) => formatDate(row.serviceDate || row.completedTime) },
                     { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) },
                     { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedTime) },
@@ -2929,7 +2936,40 @@ function AppBuild03() {
                     { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" },
                     { key: "notes", label: "Notes", render: (row) => row.notes || "No notes" },
                     { key: "wo", label: "AMS Work Order", render: (row) => appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available" },
-                    { key: "invoice", label: "Invoice Status", render: (row) => getInvoiceForJob(appState.invoices, row.id)?.status || "No invoice" },
+                    { key: "invoice", label: "Invoice Status", render: (row) => getInvoiceForJob(appState.invoices, row.id)?.status || "Not Invoiced" },
+                    {
+                      key: "action",
+                      label: "Invoice",
+                      render: (row) => {
+                        const invoice = getInvoiceForJob(appState.invoices, row.id);
+                        if (invoice) {
+                          return (
+                            <button
+                              className="secondary-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedInvoiceId(invoice.id);
+                                openScreen("myInvoices");
+                              }}
+                            >
+                              View Invoice
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            className="primary-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              createInvoiceForJob(row);
+                            }}
+                          >
+                            Submit Invoice
+                          </button>
+                        );
+                      },
+                    },
                   ]}
                   rows={filteredCompletedCrewJobs}
                   stickyHeader
@@ -2966,51 +3006,57 @@ function AppBuild03() {
   const crewInvoicesSection = (
     <PageSection title="My Invoices">
       {crewInvoices.length ? (
-        <DataTable
-          columns={[
-            { key: "site", label: "Site", render: (row) => row.job.siteName },
-            { key: "service", label: "Service Type", render: (row) => row.job.serviceType },
-            {
-              key: "invoice",
-              label: "Invoice Number",
-              render: (row) => row.invoice?.invoiceNumber || "Awaiting submission",
-            },
-            {
-              key: "amount",
-              label: "Amount",
-              render: (row) => formatMoney(row.invoice?.amount || row.job.price),
-            },
-            {
-              key: "status",
-              label: "Status",
-              render: (row) => <InvoiceStatusBadge value={row.invoice?.status || "Awaiting Submission"} />,
-            },
-            { key: "notes", label: "Notes", render: (row) => row.invoice?.notes || "No notes yet." },
-            {
-              key: "action",
-              label: "Action",
-              render: (row) =>
-                !row.invoice ? (
-                  <button
-                    className="secondary-button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      createInvoiceForJob(row.job);
-                    }}
-                  >
-                    Submit Invoice
-                  </button>
-                ) : (
-                  <button className="secondary-button" disabled>
-                    View Only
-                  </button>
-                ),
-            },
-          ]}
-          rows={crewInvoices.map(({ job, invoice }) => ({ id: job.id, job, invoice }))}
-          emptyTitle="No invoices"
-          emptyText="Completed job invoice tracking will appear here."
-        />
+        <div className="detail-stack">
+          <PageSection title="Ready To Submit">
+            <div className="list-scroll compact-scroll contained-scroll">
+              <DataTable
+                columns={[
+                  { key: "site", label: "Site", render: (row) => row.job.siteName },
+                  { key: "reference", label: "Job / WO Ref", render: (row) => `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
+                  { key: "amount", label: "Submitted Amount", render: (row) => formatMoney(row.job.price) },
+                  { key: "completedAt", label: "Completion Date", render: (row) => formatDate(row.job.completedTime || row.job.completedAt) },
+                  {
+                    key: "action",
+                    label: "Action",
+                    render: (row) => (
+                      <button
+                        className="primary-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          createInvoiceForJob(row.job);
+                        }}
+                      >
+                        Submit Invoice
+                      </button>
+                    ),
+                  },
+                ]}
+                rows={crewInvoices.filter(({ invoice }) => !invoice).map(({ job, invoice }) => ({ id: job.id, job, invoice }))}
+                emptyTitle="No invoices ready"
+                emptyText="Completed jobs without invoices will appear here."
+              />
+            </div>
+          </PageSection>
+          <PageSection title="Submitted Invoice History">
+            <div className="list-scroll compact-scroll contained-scroll">
+              <DataTable
+                columns={[
+                  { key: "invoice", label: "Invoice Ref", render: (row) => row.invoice.invoiceNumber || row.invoice.id },
+                  { key: "reference", label: "Job / WO Ref", render: (row) => `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
+                  { key: "site", label: "Site", render: (row) => row.job.siteName },
+                  { key: "amount", label: "Submitted Amount", render: (row) => formatMoney(row.invoice.amount) },
+                  { key: "submittedAt", label: "Submission Date", render: (row) => formatDate(row.invoice.submittedAt) },
+                  { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.invoice.status} /> },
+                ]}
+                rows={crewSubmittedInvoices}
+                selectedRowId={selectedInvoice?.id}
+                onRowClick={(row) => setSelectedInvoiceId(row.invoice.id)}
+                emptyTitle="No submitted invoices"
+                emptyText="Submitted invoice history will appear here."
+              />
+            </div>
+          </PageSection>
+        </div>
       ) : (
         <EmptyState title="No invoices yet" text="Completed job invoice tracking will appear here." />
       )}

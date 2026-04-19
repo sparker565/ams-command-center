@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { APP_VERSION, ROLES } from "./constants";
 
 export function BrandLogo({ role, accent = false, className = "" }) {
@@ -157,6 +157,8 @@ export function Drawer({
 }
 
 export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin }) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <div className="login-shell">
       <div className="login-panel">
@@ -175,12 +177,22 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
 
         <label className="field">
           <span>Password</span>
-          <input
-            value={password}
-            onChange={(event) => onChange("password", event.target.value)}
-            placeholder="Enter password"
-            type="password"
-          />
+          <div className="password-field-wrap">
+            <input
+              value={password}
+              onChange={(event) => onChange("password", event.target.value)}
+              placeholder="Enter password"
+              type={showPassword ? "text" : "password"}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
 
         <div className="login-actions">
@@ -413,13 +425,19 @@ export function CommandMap({ sites, selectedSiteId, onSelectSite }) {
         ))}
       </div>
 
-      <div className="map-site-list">
-        {sites.map((site) => (
-          <div key={site.id} className="map-site-row">
-            <strong>{site.name}</strong>
-            <span>{site.address}</span>
-          </div>
-        ))}
+      <div className="map-site-panel">
+        <div className="map-site-panel-header">
+          <span className="detail-label">Site List</span>
+          <strong>{sites.length} Sites</strong>
+        </div>
+        <div className="map-site-list">
+          {sites.map((site) => (
+            <div key={site.id} className="map-site-row">
+              <strong>{site.name}</strong>
+              <span>{site.address}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
