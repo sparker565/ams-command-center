@@ -1416,3 +1416,104 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
+body {
+  overflow-x: hidden;
+}
+
+.brand-logo-accent {
+  width: 68px;
+  border-radius: 14px;
+}
+
+.splash-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #000;
+}
+
+.splash-card {
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+}
+
+.splash-logo {
+  width: min(220px, 44vw);
+  height: auto;
+}
+
+.splash-copy {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+}
+
+.splash-copy strong {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.splash-copy span {
+  color: #d8c2af;
+}
+
+.back-button {
+  min-width: 76px;
+}
+
+.topbar-brand {
+  gap: 10px;
+}
+
+.topbar-accent {
+  display: none;
+}
+
+.content-shell,
+.table-wrap,
+.list-scroll,
+.contained-scroll,
+.split-view,
+.split-view-list,
+.split-view-detail {
+  min-width: 0;
+}
+
+.table-wrap,
+.list-scroll,
+.contained-scroll {
+  width: 100%;
+  overflow: auto;
+}
+
+.data-table {
+  min-width: 720px;
+}
+
+.detail-card a,
+.proposal-summary-grid a,
+.site-details-card a {
+  color: #ffb476;
+}
+
+@media (min-width: 900px) {
+  .topbar-accent {
+    display: flex;
+  }
+}
+
+@media (max-width: 760px) {
+  .login-panel {
+    padding: 24px 20px;
+  }
+
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .data-table {
+    min-width: 640px;
+  }
+}

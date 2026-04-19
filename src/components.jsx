@@ -1,16 +1,41 @@
 import React from "react";
+import { APP_VERSION, ROLES } from "./constants";
 
-export function BrandLogo() {
+export function BrandLogo({ role, accent = false, className = "" }) {
+  const isOwner = role === ROLES.OWNER;
+  const src = isOwner
+    ? accent
+      ? "/scs_technology_logo.jpeg"
+      : "/scs_corporate_logo.jpeg"
+    : "/ams_logo.png";
+  const alt = isOwner ? "SparkCommand Systems logo" : "AMS logo";
+
   return (
-    <div className="brand-logo-wrap">
-      <img className="brand-logo" src="/ams_logo.png" alt="AMS logo" />
+    <div className={`brand-logo-wrap ${className}`.trim()}>
+      <img className={`brand-logo ${accent ? "brand-logo-accent" : ""}`.trim()} src={src} alt={alt} />
+    </div>
+  );
+}
+
+export function SplashScreen() {
+  return (
+    <div className="splash-screen">
+      <div className="splash-card">
+        <img className="splash-logo" src="/ams_logo.png" alt="AMS logo" />
+        <div className="splash-copy">
+          <strong>Command Center</strong>
+          <span>Version {APP_VERSION}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 export function Header({
   currentUser,
+  activeScreen,
   onOpenDrawer,
+  onGoBack,
   onOpenNotifications,
   onToggleProfileMenu,
   profileMenuOpen,
@@ -20,23 +45,24 @@ export function Header({
   return (
     <header className="topbar">
       <div className="topbar-side topbar-side-left">
-        <button className="icon-button" onClick={onOpenDrawer} aria-label="Open menu">
-          <span />
-          <span />
-          <span />
-        </button>
+        {activeScreen !== "dashboard" ? (
+          <button className="text-button back-button" onClick={onGoBack} aria-label="Back to dashboard">
+            Back
+          </button>
+        ) : (
+          <button className="icon-button" onClick={onOpenDrawer} aria-label="Open menu">
+            <span />
+            <span />
+            <span />
+          </button>
+        )}
       </div>
 
       <div className="topbar-brand-slot">
-        <a
-          className="topbar-brand"
-          href="https://www.advancedmtnc.com"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Open Advanced Maintenance Services website"
-        >
-          <BrandLogo />
-        </a>
+        <div className="topbar-brand" aria-label="Current portal brand">
+          <BrandLogo role={currentUser?.role} />
+          {currentUser?.role === ROLES.OWNER ? <BrandLogo role={currentUser?.role} accent className="topbar-accent" /> : null}
+        </div>
       </div>
 
       <div className="topbar-side topbar-side-right">
@@ -94,7 +120,7 @@ export function Drawer({
     <>
       <aside className={`drawer ${open ? "open" : ""}`}>
         <div className="drawer-top">
-          <BrandLogo />
+          <BrandLogo role={currentUser?.role} />
           <button className="text-button" onClick={onClose}>
             Close
           </button>
@@ -135,7 +161,7 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
     <div className="login-shell">
       <div className="login-panel">
         <BrandLogo />
-        <div className="login-caption">Command Center Demo Version 0.5.6</div>
+        <div className="login-caption">Command Center Version {APP_VERSION}</div>
 
         <label className="field">
           <span>Email</span>
