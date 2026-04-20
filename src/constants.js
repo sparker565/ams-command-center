@@ -24,7 +24,7 @@ export const WORK_ORDER_STATUS = [
   "Open Opportunity",
 ];
 
-export const JOB_STATUS = ["Assigned", "In Progress", "Completed", "Need Help"];
+export const JOB_STATUS = ["Assigned", "In Progress", "Completed", "Need Help", "Canceled"];
 export const WORK_ORDER_FILTERS = ["All", "Open", "Assigned", "Closed"];
 export const JOB_FILTERS = ["All", "Pending", "In Progress", "Completed", "Need Help"];
 export const PROPOSAL_STATUS = ["submitted", "revision_requested", "rejected", "approved"];

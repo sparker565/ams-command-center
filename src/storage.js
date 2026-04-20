@@ -19,6 +19,22 @@ function loadSessionData() {
   }
 }
 
+function mergeSeedRecords(existing = [], seed = [], key = "email") {
+  const seen = new Set(
+    existing
+      .map((record) => String(record?.[key] || record?.id || "").toLowerCase())
+      .filter(Boolean)
+  );
+
+  return [
+    ...existing,
+    ...seed.filter((record) => {
+      const lookup = String(record?.[key] || record?.id || "").toLowerCase();
+      return lookup && !seen.has(lookup);
+    }),
+  ];
+}
+
 export function loadAppState() {
   if (typeof window === "undefined") {
     return createSeedData();
@@ -28,9 +44,14 @@ export function loadAppState() {
   const parsed = loadLocalData();
   const session = loadSessionData();
 
+  const mergedUsers = mergeSeedRecords(parsed.users || seed.users || [], seed.users || [], "email");
+  const mergedVendors = mergeSeedRecords(parsed.vendors || seed.vendors || [], seed.vendors || [], "email");
+
   return {
     ...seed,
     ...parsed,
+    users: mergedUsers,
+    vendors: mergedVendors,
     companyProfiles: {
       ...seed.companyProfiles,
       ...(parsed.companyProfiles || {}),

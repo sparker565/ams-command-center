@@ -626,6 +626,14 @@ img {
   border: 1px solid #242424;
   border-radius: 16px;
   background: rgba(18, 18, 18, 0.9);
+  color: #f7f1eb;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-site-row.selected {
+  border-color: #ff7a00;
+  background: rgba(255, 122, 0, 0.12);
 }
 
 .map-site-row span,
@@ -1540,6 +1548,35 @@ body {
 
 .data-table {
   min-width: 720px;
+}
+
+.proposal-list-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.topbar {
+  background: #000;
+}
+
+.drawer {
+  background: #000;
+}
+
+.drawer-user-card {
+  padding: 10px 12px;
+  margin: 10px 0 14px;
+  border-radius: 14px;
+  background: #050505;
+}
+
+.drawer-user-name {
+  margin-bottom: 4px;
+}
+
+.drawer-user-meta {
+  margin-bottom: 2px;
+  font-size: 0.82rem;
 }
 
 .detail-card a,

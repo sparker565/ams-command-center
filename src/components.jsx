@@ -432,10 +432,15 @@ export function CommandMap({ sites, selectedSiteId, onSelectSite }) {
         </div>
         <div className="map-site-list">
           {sites.map((site) => (
-            <div key={site.id} className="map-site-row">
+            <button
+              key={site.id}
+              type="button"
+              className={`map-site-row ${selectedSiteId === site.id ? "selected" : ""}`}
+              onClick={() => onSelectSite(site.id)}
+            >
               <strong>{site.name}</strong>
               <span>{site.address}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -443,7 +448,7 @@ export function CommandMap({ sites, selectedSiteId, onSelectSite }) {
   );
 }
 
-export function SiteDetailsCard({ site, relatedWorkOrderCount }) {
+export function SiteDetailsCard({ site, relatedWorkOrderCount, needsActionCount = 0 }) {
   if (!site) {
     return (
       <EmptyState
@@ -470,6 +475,10 @@ export function SiteDetailsCard({ site, relatedWorkOrderCount }) {
         <div>
           <span className="detail-label">Related Work Orders</span>
           <strong>{relatedWorkOrderCount}</strong>
+        </div>
+        <div>
+          <span className="detail-label">Needs Action</span>
+          <strong>{needsActionCount}</strong>
         </div>
       </div>
       <div className="site-notes">
