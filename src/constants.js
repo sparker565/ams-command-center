@@ -50,6 +50,7 @@ export const DRAWER_MENUS = {
   [ROLES.AMS_ADMIN]: [
     "dashboard",
     "workOrders",
+    "proposals",
     "jobs",
     "accounting",
     "sites",
@@ -62,6 +63,7 @@ export const DRAWER_MENUS = {
   [ROLES.AMS_MANAGER]: [
     "dashboard",
     "workOrders",
+    "proposals",
     "jobs",
     "sites",
     "vendors",
@@ -83,6 +85,7 @@ export const SCREEN_LABELS = {
   systemControls: "System Controls",
   auditLog: "Audit Log",
   workOrders: "Work Orders",
+  proposals: "Proposals",
   jobs: "Jobs",
   accounting: "Accounting",
   sites: "Sites",

@@ -191,6 +191,13 @@ function normalizeSite(site) {
 
 function normalizeUser(user) {
   const legacyAddress = parseLegacyAddress(user.address || "");
+  const hasBadDefaultAmsAddress =
+    user.streetAddress === "19B North Street" &&
+    ["Advanced Maintenance Services", "SparkCommand Systems", "AMS Demo Crew Company"].includes(user.companyName || "");
+  const streetAddress = hasBadDefaultAmsAddress ? "" : user.streetAddress || legacyAddress.streetAddress;
+  const city = hasBadDefaultAmsAddress ? "" : user.city || legacyAddress.city;
+  const state = hasBadDefaultAmsAddress ? "" : user.state || legacyAddress.state;
+  const zip = hasBadDefaultAmsAddress ? "" : user.zip || legacyAddress.zip;
   return {
     ...user,
     active: user.active ?? (user.accessStatus || "Active") === "Active",
@@ -199,18 +206,18 @@ function normalizeUser(user) {
     phone: user.phone || "",
     jobTitle: user.jobTitle || "",
     companyName: user.companyName || "",
-    streetAddress: user.streetAddress || legacyAddress.streetAddress,
-    city: user.city || legacyAddress.city,
-    state: user.state || legacyAddress.state,
-    zip: user.zip || legacyAddress.zip,
+    streetAddress,
+    city,
+    state,
+    zip,
     internalNotes: user.internalNotes || "",
     profilePhotoStatus: user.profilePhotoStatus || "Photo Upload Coming Soon",
     address: buildAddressLine({
-      streetAddress: user.streetAddress || legacyAddress.streetAddress,
-      city: user.city || legacyAddress.city,
-      state: user.state || legacyAddress.state,
-      zip: user.zip || legacyAddress.zip,
-      fallbackAddress: user.address || "",
+      streetAddress,
+      city,
+      state,
+      zip,
+      fallbackAddress: hasBadDefaultAmsAddress ? "" : user.address || "",
     }),
   };
 }
@@ -885,6 +892,7 @@ function AppBuild03() {
   const [siteSearch, setSiteSearch] = useState("");
   const [crewSearch, setCrewSearch] = useState("");
   const [proposalSearch, setProposalSearch] = useState("");
+  const [proposalStatusFilter, setProposalStatusFilter] = useState("All");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState(null);
   const [selectedProposalId, setSelectedProposalId] = useState(null);
@@ -971,6 +979,7 @@ function AppBuild03() {
     recurringFrequency: "",
     recurringVendorCost: "",
     recurringPricingNotes: "",
+    vendorCost: "",
     seasonStart: "",
     seasonEnd: "",
     seasonalServiceType: "",
@@ -1095,6 +1104,7 @@ function AppBuild03() {
         recurringFrequency: "",
         recurringVendorCost: "",
         recurringPricingNotes: "",
+        vendorCost: "",
         seasonStart: "",
         seasonEnd: "",
         seasonalServiceType: "",
@@ -1785,6 +1795,7 @@ function AppBuild03() {
     const createdAt = new Date().toISOString();
     const proposalRequired = workOrderForm.workflowType === "proposal";
     const workType = workOrderForm.workType || "one_time";
+    const directVendorCost = String(workOrderForm.vendorCost || "").trim();
     const record = {
       id: createId("wo"),
       amsWorkOrderNumber: nextWorkOrderNumber,
@@ -1806,6 +1817,7 @@ function AppBuild03() {
       recurringFrequency: workType === "recurring" ? workOrderForm.recurringFrequency : "",
       recurringVendorCost:
         workType === "recurring" ? String(workOrderForm.recurringVendorCost || "").trim() : "",
+      vendorCost: directVendorCost,
       recurringPricingNotes:
         workType === "recurring" ? String(workOrderForm.recurringPricingNotes || "").trim() : "",
       seasonStart: workType === "seasonal" ? workOrderForm.seasonStart : "",
@@ -1814,9 +1826,9 @@ function AppBuild03() {
       createdAt,
     };
 
-      const createdJob = directVendor
-        ? buildJobRecord({ workOrder: record, vendor: directVendor, price: "", currentUser })
-        : null;
+    const createdJob = directVendor
+      ? buildJobRecord({ workOrder: record, vendor: directVendor, price: directVendorCost, currentUser })
+      : null;
 
     updateAppState((current) => ({
       ...current,
@@ -1831,6 +1843,7 @@ function AppBuild03() {
       workflowType: "direct",
       workType: "one_time",
       recurringFrequency: "",
+      vendorCost: "",
       seasonStart: "",
       seasonEnd: "",
       seasonalServiceType: "",
@@ -1888,7 +1901,7 @@ function AppBuild03() {
       return;
     }
 
-    const newJob = buildJobRecord({ workOrder, vendor, price: "", currentUser });
+    const newJob = buildJobRecord({ workOrder, vendor, price: workOrder.vendorCost || workOrder.recurringVendorCost || "", currentUser });
 
     updateAppState((current) => ({
       ...current,
@@ -1966,6 +1979,21 @@ function AppBuild03() {
         { id: createId("line"), service: "", description: "", qty: "1", rate: "", amount: "" },
       ],
     }));
+  };
+
+  const removeInvoiceLineItem = (lineItemId) => {
+    const confirmed = window.confirm("Remove this invoice line item?");
+    if (!confirmed) return;
+    setInvoiceForm((current) => {
+      const lineItems = current.lineItems.filter((lineItem) => lineItem.id !== lineItemId);
+      const total = calculateInvoiceTotal(lineItems);
+      return {
+        ...current,
+        lineItems,
+        amount: total,
+        total,
+      };
+    });
   };
 
   const saveProfile = () => {
@@ -2311,7 +2339,7 @@ function AppBuild03() {
 
     const draft = vendorProposalDrafts[workOrder.id] || {};
     if (!String(draft.submittedPrice || "").trim()) {
-      window.alert("Proposal price is required.");
+      window.alert("Proposal cost is required.");
       return;
     }
 
@@ -2593,6 +2621,8 @@ function AppBuild03() {
   const filteredProposals = sortByNewest(
     appState.proposals.filter((proposal) => {
       const workOrder = appState.workOrders.find((entry) => entry.id === proposal.workOrderId);
+      const matchesStatus = proposalStatusFilter === "All" || proposal.status === proposalStatusFilter;
+      if (!matchesStatus) return false;
       return searchMatches(
         [
           proposal.vendorCompanyName,
@@ -2895,7 +2925,7 @@ function AppBuild03() {
         <div className="proposal-summary-grid">
           <div><span className="detail-label">AMS Work Order</span><p>{workOrder?.amsWorkOrderNumber || "Not available"}</p></div>
           <div><span className="detail-label">Site</span><p>{workOrder?.siteName || "Unknown site"}</p></div>
-          <div><span className="detail-label">Submitted Price</span><p>{formatMoney(proposal.submittedPrice)}</p></div>
+          <div><span className="detail-label">Submitted Cost</span><p>{formatMoney(proposal.submittedPrice)}</p></div>
           <div><span className="detail-label">Submitted Notes</span><p>{proposal.submittedNotes || "No submitted notes."}</p></div>
         </div>
         <InputRow>
@@ -2975,7 +3005,7 @@ function AppBuild03() {
                 <div className="proposal-card-meta">
                   <div className="proposal-card-badges"><ProposalStateBadge value={workOrder.proposalState} />{latestProposal ? <ProposalStatusBadge value={latestProposal.status} /> : null}</div>
                   <div className="proposal-card-form">
-                    <label className="field compact-field"><span>Proposal Price</span><input value={draft.submittedPrice} onChange={(event) => updateVendorProposalDraft(workOrder.id, "submittedPrice", event.target.value)} placeholder="Enter price" /></label>
+                    <label className="field compact-field"><span>Required Cost</span><input value={draft.submittedPrice} onChange={(event) => updateVendorProposalDraft(workOrder.id, "submittedPrice", event.target.value)} placeholder="Enter vendor cost" required /></label>
                     <label className="field compact-field"><span>Proposal Notes</span><textarea rows="3" value={draft.submittedNotes} onChange={(event) => updateVendorProposalDraft(workOrder.id, "submittedNotes", event.target.value)} placeholder="Add scope notes or crew comments" /></label>
                   </div>
                   <div className="proposal-card-actions"><button className="primary-button" onClick={() => handleCrewProposalSubmit(workOrder)}>{latestProposal ? "Resubmit Proposal" : "Submit Proposal"}</button></div>
@@ -3071,7 +3101,7 @@ function AppBuild03() {
         const workOrder = appState.workOrders.find((entry) => entry.id === proposal.workOrderId);
         const site = workOrder ? appState.sites.find((entry) => entry.id === workOrder.siteId) : null;
         const canResubmit = currentCrewRecord && workOrder && canCrewSubmitProposal({ workOrder, site, vendor: currentCrewRecord, proposals: appState.proposals, jobs: appState.jobs }) && ["rejected", "revision_requested"].includes(proposal.status);
-        return <article key={proposal.id} className="proposal-history-card"><div className="proposal-history-top"><div><strong>{workOrder?.siteName || "Work Order"}</strong><p>{workOrder?.description || "Reference unavailable"}</p></div><ProposalStatusBadge value={proposal.status} /></div><div className="proposal-history-grid-inner"><div><span className="detail-label">Submitted Price</span><p>{formatMoney(proposal.submittedPrice)}</p></div><div><span className="detail-label">Reviewed Price</span><p>{formatMoney(proposal.reviewedPrice)}</p></div><div><span className="detail-label">Submitted At</span><p>{formatDate(proposal.submittedAt)}</p></div><div><span className="detail-label">Revision Count</span><p>{proposal.revisionCount}</p></div></div><div className="proposal-history-notes"><div><span className="detail-label">AMS Notes</span><p>{proposal.amsNotes || "No AMS notes yet."}</p></div></div>{canResubmit ? <div className="proposal-history-actions"><button className="secondary-button" onClick={() => prepareResubmissionDraft(proposal)}>Load Resubmission Draft</button></div> : null}</article>;
+        return <article key={proposal.id} className="proposal-history-card"><div className="proposal-history-top"><div><strong>{workOrder?.siteName || "Work Order"}</strong><p>{workOrder?.description || "Reference unavailable"}</p></div><ProposalStatusBadge value={proposal.status} /></div><div className="proposal-history-grid-inner"><div><span className="detail-label">Submitted Cost</span><p>{formatMoney(proposal.submittedPrice)}</p></div><div><span className="detail-label">Reviewed Cost</span><p>{formatMoney(proposal.reviewedPrice)}</p></div><div><span className="detail-label">Submitted At</span><p>{formatDate(proposal.submittedAt)}</p></div><div><span className="detail-label">Revision Count</span><p>{proposal.revisionCount}</p></div></div><div className="proposal-history-notes"><div><span className="detail-label">AMS Notes</span><p>{proposal.amsNotes || "No AMS notes yet."}</p></div></div>{canResubmit ? <div className="proposal-history-actions"><button className="secondary-button" onClick={() => prepareResubmissionDraft(proposal)}>Load Resubmission Draft</button></div> : null}</article>;
       })}</div> : <EmptyState title="No proposals yet" text="Your submitted proposal history will appear here." />}
     </PageSection>
   );
@@ -3406,7 +3436,7 @@ function AppBuild03() {
                         <DataTable
                           columns={[
                             { key: "vendor", label: "Crew", render: (row) => row.vendorCompanyName },
-                            { key: "submittedPrice", label: "Submitted Price", render: (row) => formatMoney(row.submittedPrice) },
+                            { key: "submittedPrice", label: "Submitted Cost", render: (row) => formatMoney(row.submittedPrice) },
                             { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> },
                             { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) },
                           ]}
@@ -3454,7 +3484,7 @@ function AppBuild03() {
       </PageSection>
       <PageSection title="Proposals">
         <SplitView
-          list={<div className="list-stack"><SearchBar value={proposalSearch} onChange={setProposalSearch} placeholder="Search proposals" /><div className="list-scroll"><DataTable columns={[{ key: "crew", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "site", label: "Site", render: (row) => appState.workOrders.find((entry) => entry.id === row.workOrderId)?.siteName || "Unknown" }, { key: "price", label: "Submitted Price", render: (row) => formatMoney(row.submittedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }]} rows={filteredProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Proposal submissions will appear here." /></div></div>}
+          list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={proposalSearch} onChange={setProposalSearch} placeholder="Search proposals" /><FilterRow label="Status" value={proposalStatusFilter} options={["All", "submitted", "revision_requested", "approved", "rejected", "canceled", "completed"]} onChange={setProposalStatusFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "crew", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "site", label: "Site", render: (row) => appState.workOrders.find((entry) => entry.id === row.workOrderId)?.siteName || "Unknown" }, { key: "price", label: "Submitted Cost", render: (row) => formatMoney(row.submittedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }]} rows={filteredProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Proposal submissions will appear here." /></div></div>}
             detail={<div className="detail-stack"><PageSection title="Work Order Summary">{selectedProposal ? (() => { const workOrder = appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId); return workOrder ? <div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{workOrder.siteName}</strong><p>{workOrder.description}</p></div><div className="proposal-summary-badges"><ProposalStateBadge value={workOrder.proposalState} /><StatusBadge value={workOrder.status} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{workOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{workOrder.serviceType}</p></div>{showExternalWorkOrder ? <div><span className="detail-label">External Ref</span><p>{workOrder.externalWorkOrderNumber || "Not set"}</p></div> : null}<div><span className="detail-label">Photos Required</span><p>{workOrder.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div></div></div> : <EmptyState title="No work order found" text="This proposal is missing its work order reference." />; })() : <EmptyState title="No proposal selected" text="Choose a proposal to review." />}</PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedProposal ? appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId) : null)}</PageSection></div>}
         />
       </PageSection>
@@ -3466,7 +3496,7 @@ function AppBuild03() {
       <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Invoice Submitted", value: appState.invoices.filter((invoice) => invoice.status === "Invoice Submitted").length }, { label: "Under Review", value: appState.invoices.filter((invoice) => invoice.status === "Under Review").length }, { label: "Approved", value: appState.invoices.filter((invoice) => invoice.status === "Approved").length }, { label: "Paid", value: appState.invoices.filter((invoice) => invoice.status === "Paid").length }]} /></PageSection>
       <SplitView
         list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(row.price) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
-        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Under Review")} disabled={selectedInvoice.status === "Paid"}>Mark Under Review</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Mark Approved</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
+        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Under Review")} disabled={selectedInvoice.status === "Paid"}>Mark Under Review</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Mark Approved</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
       />
     </div>
   );
@@ -3655,7 +3685,7 @@ function AppBuild03() {
 
         <Modal open={activeModal === "workOrder"} title="Create Work Order" onClose={closeModal} footer={<div className="form-actions"><button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button><button className="primary-button" onClick={createWorkOrder}>Create Work Order</button></div>}>
           <div className="modal-reference">AMS Work Order Number: {nextWorkOrderNumber}</div>
-          <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Work Type"><select value={workOrderForm.workType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workType: event.target.value, recurringFrequency: event.target.value === "recurring" ? current.recurringFrequency : "", recurringVendorCost: event.target.value === "recurring" ? current.recurringVendorCost : "", recurringPricingNotes: event.target.value === "recurring" ? current.recurringPricingNotes : "", seasonStart: event.target.value === "seasonal" ? current.seasonStart : "", seasonEnd: event.target.value === "seasonal" ? current.seasonEnd : "", seasonalServiceType: event.target.value === "seasonal" ? current.seasonalServiceType : "" }))}><option value="one_time">One-Time</option><option value="recurring">Recurring</option><option value="seasonal">Seasonal/Triggered</option></select></Field><Field label="Assign Vendor Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field>{workOrderForm.workType === "recurring" ? <><Field label="Recurring Frequency"><select value={workOrderForm.recurringFrequency} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringFrequency: event.target.value }))}><option value="">Select frequency</option><option value="weekly">Weekly</option><option value="bi_weekly">Bi-weekly</option><option value="monthly">Monthly</option></select></Field><Field label="Vendor Cost"><input value={workOrderForm.recurringVendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringVendorCost: event.target.value }))} placeholder="Enter recurring vendor cost" /></Field></> : null}{workOrderForm.workType === "seasonal" ? <><Field label="Season Start"><input type="date" value={workOrderForm.seasonStart} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonStart: event.target.value }))} /></Field><Field label="Season End"><input type="date" value={workOrderForm.seasonEnd} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonEnd: event.target.value }))} /></Field><Field label="Seasonal Service"><select value={workOrderForm.seasonalServiceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonalServiceType: event.target.value }))}><option value="">Select service</option><option value="Plowing">Plowing</option><option value="Shoveling">Shoveling</option><option value="Salting">Salting</option></select></Field></> : null}</InputRow>
+          <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Work Type"><select value={workOrderForm.workType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workType: event.target.value, recurringFrequency: event.target.value === "recurring" ? current.recurringFrequency : "", recurringVendorCost: event.target.value === "recurring" ? current.recurringVendorCost : "", recurringPricingNotes: event.target.value === "recurring" ? current.recurringPricingNotes : "", seasonStart: event.target.value === "seasonal" ? current.seasonStart : "", seasonEnd: event.target.value === "seasonal" ? current.seasonEnd : "", seasonalServiceType: event.target.value === "seasonal" ? current.seasonalServiceType : "" }))}><option value="one_time">One-Time</option><option value="recurring">Recurring</option><option value="seasonal">Seasonal/Triggered</option></select></Field><Field label="Assign Vendor Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field>{workOrderForm.workflowType === "direct" && workOrderForm.workType !== "recurring" ? <Field label="Vendor Cost"><input value={workOrderForm.vendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, vendorCost: event.target.value }))} placeholder="Enter vendor cost" /></Field> : null}<Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field>{workOrderForm.workType === "recurring" ? <><Field label="Recurring Frequency"><select value={workOrderForm.recurringFrequency} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringFrequency: event.target.value }))}><option value="">Select frequency</option><option value="weekly">Weekly</option><option value="bi_weekly">Bi-weekly</option><option value="monthly">Monthly</option></select></Field><Field label="Vendor Cost"><input value={workOrderForm.recurringVendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringVendorCost: event.target.value, vendorCost: event.target.value }))} placeholder="Enter recurring vendor cost" /></Field></> : null}{workOrderForm.workType === "seasonal" ? <><Field label="Season Start"><input type="date" value={workOrderForm.seasonStart} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonStart: event.target.value }))} /></Field><Field label="Season End"><input type="date" value={workOrderForm.seasonEnd} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonEnd: event.target.value }))} /></Field><Field label="Seasonal Service"><select value={workOrderForm.seasonalServiceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonalServiceType: event.target.value }))}><option value="">Select service</option><option value="Plowing">Plowing</option><option value="Shoveling">Shoveling</option><option value="Salting">Salting</option></select></Field></> : null}</InputRow>
         <label className="checkbox-inline"><input type="checkbox" checked={workOrderForm.requireBeforeAfterPhotos} onChange={(event) => setWorkOrderForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.checked }))} />Require before and after photos</label>
       </Modal>
 
