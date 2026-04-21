@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "react";
 import {
   APP_VERSION,
   AMS_ROLES,
+  CREW_ROLES,
   DRAWER_MENUS,
+  FIREBASE_ROLE_BRIDGE,
   INVOICE_STATUS,
   JOB_FILTERS,
   JOB_STATUS,
@@ -36,42 +38,11 @@ import {
   TopActionBar,
   UnderConstruction,
 } from "./components";
-import { signIn, signOutUser } from "./firebaseAuth";
+import { getFirebaseErrorMessage, loadFirestoreUserByEmail, signIn, signOutUser, subscribeToAuthState } from "./firebaseAuth";
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
-
-const FIREBASE_ROLE_BRIDGE = {
-  "sparker565@gmail.com": {
-    name: "Spark Owner",
-    role: ROLES.OWNER,
-  },
-  "shawnp@advancedmtnc.com": {
-    name: "Shawn P",
-    role: ROLES.AMS_ADMIN,
-  },
-  "jeffr@advancedmtnc.com": {
-    name: "Jeff R",
-    role: ROLES.AMS_ADMIN,
-  },
-  "timr@advancedmtnc.com": {
-    name: "Tim R",
-    role: ROLES.AMS_ADMIN,
-  },
-  "jeanniez@advancedmtnc.com": {
-    name: "Jeannie Z",
-    role: ROLES.AMS_ADMIN,
-  },
-  "abbyquinn@rocketmail.com": {
-    name: "Abby Quinn",
-    role: ROLES.CREW,
-  },
-  "craigcarew@gmail.com": {
-    name: "Craig Carew",
-    role: ROLES.CREW,
-  },
-};
 
 function formatDate(value) {
   if (!value) return "Not available";
@@ -110,6 +81,28 @@ function parseLegacyAddress(address = "") {
     state: stateZipMatch?.[1]?.toUpperCase() || "",
     zip: stateZipMatch?.[2] || "",
   };
+}
+
+function normalizeEmail(email = "") {
+  return String(email).trim().toLowerCase();
+}
+
+function isCrewRole(role) {
+  return CREW_ROLES.includes(role);
+}
+
+function isCrewUser(user) {
+  return isCrewRole(user?.role);
+}
+
+function getDisplayRole(user) {
+  return user?.displayRole || (user?.role === ROLES.VENDOR ? "Crew" : user?.role || "");
+}
+
+function getFirestoreRole(role) {
+  if (role === ROLES.AMS_ADMIN) return ROLES.AMS_ADMIN;
+  if (role === ROLES.VENDOR) return ROLES.VENDOR;
+  return role || "";
 }
 
 function toNumber(value) {
@@ -203,6 +196,8 @@ function normalizeUser(user) {
     active: user.active ?? (user.accessStatus || "Active") === "Active",
     accessStatus: user.accessStatus || (user.active === false ? "Inactive" : "Active"),
     authStatus: user.authStatus || (user.active === false ? "Disabled" : "Active"),
+    role: getFirestoreRole(user.role),
+    displayRole: user.displayRole || (user.role === ROLES.VENDOR ? "Crew" : user.role || ""),
     phone: user.phone || "",
     jobTitle: user.jobTitle || "",
     companyName: user.companyName || "",
@@ -393,6 +388,7 @@ function normalizeStateData(state) {
         [ROLES.AMS_MANAGER]: "dashboard",
         [ROLES.CUSTOMER]: "dashboard",
         [ROLES.CREW]: "dashboard",
+        [ROLES.VENDOR]: "dashboard",
         [ROLES.OPERATOR]: "dashboard",
         ...(state.ui?.activeScreenByRole || {}),
       },
@@ -431,7 +427,7 @@ function searchMatches(values, query) {
 }
 
 function findCrewForUser(vendors, currentUser) {
-  if (!currentUser || currentUser.role !== ROLES.CREW) return null;
+  if (!currentUser || !isCrewUser(currentUser)) return null;
 
   return (
     vendors.find((vendor) => vendor.userId && vendor.userId === currentUser.id) ||
@@ -610,7 +606,7 @@ function getInvoiceForJob(invoices, jobId) {
 
 function getCompanyProfileForRole(state, user, vendorRecord) {
   if (!user) return null;
-  if (user.role === ROLES.CREW && vendorRecord) {
+  if (isCrewUser(user) && vendorRecord) {
     return state.companyProfiles?.vendors?.[vendorRecord.id] || null;
   }
   return state.companyProfiles?.ams || null;
@@ -621,7 +617,7 @@ function isAmsUser(user) {
 }
 
 function canViewExternalWorkOrder(user) {
-  return user?.role !== ROLES.CREW && user?.role !== "Vendor";
+  return !isCrewUser(user);
 }
 
 function canEditCrewIdentity(user) {
@@ -631,15 +627,59 @@ function canEditCrewIdentity(user) {
 function getPortalPathForUser(user) {
   if (user?.role === ROLES.OWNER) return "/owner";
   if (AMS_ROLES.includes(user?.role)) return "/ams";
-  if (user?.role === ROLES.CREW) return "/crew";
+  if (isCrewUser(user)) return "/crew";
   return "/";
 }
 
 function getPortalEyebrow(user) {
   if (user?.role === ROLES.OWNER) return "SparkCommand Systems";
   if (AMS_ROLES.includes(user?.role)) return `AMS Portal • Version ${APP_VERSION}`;
-  if (user?.role === ROLES.CREW) return `Crew Portal • Version ${APP_VERSION}`;
+  if (isCrewUser(user)) return `Crew Portal • Version ${APP_VERSION}`;
   return `Version ${APP_VERSION}`;
+}
+
+function buildUserFromFirestoreProfile(profile, authUser, state) {
+  const email = normalizeEmail(profile?.email || authUser?.email || "");
+  const existingUser =
+    (state.users || []).find((user) => normalizeEmail(user.email) === email) ||
+    getAllUserPool(state).find((user) => normalizeEmail(user.email) === email) ||
+    null;
+  const role = getFirestoreRole(profile?.role);
+  const displayRole = profile?.displayRole || (role === ROLES.VENDOR ? "Crew" : role);
+  const name =
+    profile?.name ||
+    profile?.displayName ||
+    [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") ||
+    existingUser?.name ||
+    authUser?.displayName ||
+    email;
+
+  return normalizeUser({
+    ...(existingUser || {}),
+    id: existingUser?.id || profile?.id || authUser?.uid || createId("firebase-user"),
+    name,
+    email: profile?.email || email,
+    password: existingUser?.password || "",
+    role,
+    displayRole,
+    active: profile?.active ?? existingUser?.active ?? true,
+    accessStatus: profile?.accessStatus || existingUser?.accessStatus || "Active",
+    authStatus: profile?.authStatus || "Active",
+    phone: profile?.phone || existingUser?.phone || "",
+    jobTitle: profile?.jobTitle || profile?.title || existingUser?.jobTitle || displayRole,
+    companyName:
+      profile?.companyName ||
+      profile?.company ||
+      existingUser?.companyName ||
+      (role === ROLES.VENDOR ? "Crew Company" : "Advanced Maintenance Services"),
+    streetAddress: profile?.streetAddress || existingUser?.streetAddress || "",
+    city: profile?.city || existingUser?.city || "",
+    state: profile?.state || existingUser?.state || "",
+    zip: profile?.zip || existingUser?.zip || "",
+    internalNotes: existingUser?.internalNotes || "",
+    firebaseUid: authUser?.uid || existingUser?.firebaseUid || "",
+    firestoreUserId: profile?.id || existingUser?.firestoreUserId || "",
+  });
 }
 
 function userCanManageUser(actor, target) {
@@ -884,6 +924,9 @@ function AppBuild03() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [authRestoring, setAuthRestoring] = useState(true);
   const [activeModal, setActiveModal] = useState(null);
   const [workOrderFilter, setWorkOrderFilter] = useState("All");
   const [jobFilter, setJobFilter] = useState("All");
@@ -1090,6 +1133,8 @@ function AppBuild03() {
     }));
     setDrawerOpen(false);
     setProfileMenuOpen(false);
+    setLoginError("");
+    setLoginLoading(false);
   };
 
   const openModal = (type) => {
@@ -1200,58 +1245,29 @@ function AppBuild03() {
     return true;
   };
 
-  const getFirebaseBridgeUser = (email) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const bridgeConfig = FIREBASE_ROLE_BRIDGE[normalizedEmail];
-    if (!bridgeConfig) return null;
-
-    const existingUser =
-      getAllUserPool(appState).find(
-        (user) => user.email?.toLowerCase() === normalizedEmail && user.role === bridgeConfig.role
-      ) || null;
-
-    if (existingUser) {
-      return {
-        ...existingUser,
-        email: normalizedEmail,
-        active: existingUser.active ?? true,
-      };
-    }
-
-    return {
-      id: createId("firebase-user"),
-      name: bridgeConfig.name,
-      email: normalizedEmail,
-      password: "",
-      role: bridgeConfig.role,
-      active: true,
-      accessStatus: "Active",
-      authStatus: "Active",
-      phone: "",
-      jobTitle: bridgeConfig.role,
-      companyName: bridgeConfig.role === ROLES.CREW ? "Crew Company" : "Advanced Maintenance Services",
-      streetAddress: "",
-      city: "",
-      state: "",
-      zip: "",
-      internalNotes: "Firebase role bridge user",
-    };
-  };
-
   const completeFirebaseLogin = (firebaseUser) => {
     if (!firebaseUser) return false;
 
     updateAppState((current) => {
-      const upsertedUsers = current.users.some((user) => user.id === firebaseUser.id)
-        ? current.users.map((user) => (user.id === firebaseUser.id ? { ...user, ...firebaseUser } : user))
+      const upsertedUsers = current.users.some(
+        (user) => user.id === firebaseUser.id || normalizeEmail(user.email) === normalizeEmail(firebaseUser.email)
+      )
+        ? current.users.map((user) =>
+            user.id === firebaseUser.id || normalizeEmail(user.email) === normalizeEmail(firebaseUser.email)
+              ? { ...user, ...firebaseUser, id: user.id }
+              : user
+          )
         : [firebaseUser, ...current.users];
+      const currentUserId =
+        upsertedUsers.find((user) => normalizeEmail(user.email) === normalizeEmail(firebaseUser.email))?.id ||
+        firebaseUser.id;
 
       return {
         ...current,
         users: upsertedUsers,
         ui: {
           ...current.ui,
-          currentUserId: firebaseUser.id,
+          currentUserId,
           activeScreenByRole: {
             ...(current.ui?.activeScreenByRole || {}),
             [firebaseUser.role]: current.ui?.activeScreenByRole?.[firebaseUser.role] || "dashboard",
@@ -1266,7 +1282,7 @@ function AppBuild03() {
   const findLocalLoginMatch = (email, password) =>
     getAllUserPool(appState).find((user) => {
       const expectedPassword =
-        user.password || (user.role === ROLES.CREW ? "Crew123" : "");
+        user.password || (isCrewRole(user.role) ? "Crew123" : "");
       return (
         user.email.toLowerCase() === email.trim().toLowerCase() &&
         expectedPassword === password &&
@@ -1275,42 +1291,50 @@ function AppBuild03() {
     }) || null;
 
   const handleLogin = async (email, password) => {
-    const match = (appState.users || []).find(
-      (user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.active
-    );
-
-    const firebaseResult = await signIn(email.trim(), password);
-    if (firebaseResult.user) {
-      const firebaseMappedUser = getFirebaseBridgeUser(email);
-      if (firebaseMappedUser) {
-        completeFirebaseLogin(firebaseMappedUser);
-        return;
-      }
-    }
-
-    if (firebaseResult.user && match) {
-      completeLocalLogin(match);
-      return;
-    }
-
+    setLoginError("");
     const localMatch = findLocalLoginMatch(email, password);
-    if (localMatch) {
+    const isDemoLogin = ["amsdemo@amsdemo.local", "crewdemo@amsdemo.local"].includes(normalizeEmail(email));
+    if (isDemoLogin && localMatch) {
       completeLocalLogin(localMatch);
       return;
     }
 
-    if (firebaseResult.user && !match) {
-      await signOutUser();
-    }
-
-    if (!match && !firebaseResult.user) {
-      window.alert("Invalid email or password.");
+    setLoginLoading(true);
+    const firebaseResult = await signIn(email.trim(), password);
+    if (!firebaseResult.user) {
+      setLoginLoading(false);
+      setLoginError(getFirebaseErrorMessage(firebaseResult.error));
       return;
     }
-    window.alert("This account is authenticated but is not mapped to a local AMS role yet.");
+
+    const profileResult = await loadFirestoreUserByEmail(firebaseResult.user.email || email);
+    if (profileResult.error) {
+      await signOutUser();
+      setLoginLoading(false);
+      setLoginError(getFirebaseErrorMessage(profileResult.error));
+      return;
+    }
+    if (!profileResult.profile) {
+      await signOutUser();
+      setLoginLoading(false);
+      setLoginError("Authenticated user was not found in the Firestore users collection.");
+      return;
+    }
+
+    const firebaseUser = buildUserFromFirestoreProfile(profileResult.profile, firebaseResult.user, appState);
+    if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(firebaseUser.role)) {
+      await signOutUser();
+      setLoginLoading(false);
+      setLoginError("Your Firestore user role is not supported for this portal.");
+      return;
+    }
+
+    completeFirebaseLogin(firebaseUser);
+    setLoginLoading(false);
   };
 
   const handleDemoLogin = (type) => {
+    setLoginError("");
     const demoMatch =
       type === "ams"
         ? findLocalLoginMatch("amsdemo@amsdemo.local", "DemoAMS123")
@@ -1323,6 +1347,57 @@ function AppBuild03() {
 
     completeLocalLogin(demoMatch);
   };
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = subscribeToAuthState(async (firebaseUser) => {
+      if (!active) return;
+
+      if (!firebaseUser) {
+        updateAppState((current) => ({
+          ...current,
+          ui: {
+            ...current.ui,
+            currentUserId: null,
+          },
+        }));
+        setAuthRestoring(false);
+        return;
+      }
+
+      const profileResult = await loadFirestoreUserByEmail(firebaseUser.email);
+      if (!active) return;
+
+      if (profileResult.error) {
+        await signOutUser();
+        setLoginError(getFirebaseErrorMessage(profileResult.error));
+        setAuthRestoring(false);
+        return;
+      }
+      if (!profileResult.profile) {
+        await signOutUser();
+        setLoginError("Authenticated user was not found in the Firestore users collection.");
+        setAuthRestoring(false);
+        return;
+      }
+
+      const restoredUser = buildUserFromFirestoreProfile(profileResult.profile, firebaseUser, appState);
+      if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(restoredUser.role)) {
+        await signOutUser();
+        setLoginError("Your Firestore user role is not supported for this portal.");
+        setAuthRestoring(false);
+        return;
+      }
+
+      completeFirebaseLogin(restoredUser);
+      setAuthRestoring(false);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
 
   const logout = async () => {
     await signOutUser();
@@ -1338,6 +1413,7 @@ function AppBuild03() {
   };
 
   const updateLoginField = (key, value) => {
+    if (loginError) setLoginError("");
     setLoginForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -1350,7 +1426,7 @@ function AppBuild03() {
     const assignedVendor = normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId);
     const assignedCrewContact =
       appState.users.find(
-        (user) => user.id === siteForm.assignedCrewContactId && user.role === ROLES.CREW
+        (user) => user.id === siteForm.assignedCrewContactId && isCrewRole(user.role)
       ) || null;
     const siteRecord = {
       ...siteForm,
@@ -2004,12 +2080,12 @@ function AppBuild03() {
           ? {
               ...user,
               name: profileForm.name.trim(),
-              email: currentUser.role === ROLES.CREW ? user.email : profileForm.email.trim(),
+              email: isCrewUser(currentUser) ? user.email : profileForm.email.trim(),
               password: profileForm.password || user.password || "Crew123",
               phone: profileForm.phone.trim(),
               jobTitle: profileForm.jobTitle.trim(),
               companyName:
-                currentUser.role === ROLES.CREW ? user.companyName : profileForm.companyName.trim(),
+                isCrewUser(currentUser) ? user.companyName : profileForm.companyName.trim(),
               streetAddress: profileForm.streetAddress.trim(),
               city: profileForm.city.trim(),
               state: profileForm.state.trim().toUpperCase(),
@@ -2026,7 +2102,7 @@ function AppBuild03() {
           : user
       );
 
-      if (currentUser.role === ROLES.CREW && currentCrewRecord) {
+      if (isCrewUser(currentUser) && currentCrewRecord) {
         return {
           ...current,
           users: nextUsers,
@@ -2064,7 +2140,7 @@ function AppBuild03() {
   const saveCompanyProfile = () => {
     if (!currentUser) return;
     updateAppState((current) => {
-      if (currentUser.role === ROLES.CREW && currentCrewRecord) {
+      if (isCrewUser(currentUser) && currentCrewRecord) {
         return {
           ...current,
           vendors: current.vendors.map((vendor) =>
@@ -2384,7 +2460,7 @@ function AppBuild03() {
   };
 
   const createInvoiceForJob = (job) => {
-    if (!currentUser || currentUser.role !== ROLES.CREW || !currentCrewRecord) return;
+    if (!currentUser || !isCrewUser(currentUser) || !currentCrewRecord) return;
     if (job.vendorId !== currentCrewRecord.id) return;
     if (getInvoiceForJob(appState.invoices, job.id)) {
       window.alert("An invoice already exists for this job.");
@@ -2509,7 +2585,7 @@ function AppBuild03() {
       ? appState.jobs.filter((job) => job.vendorId === currentCrewRecord.id)
       : [];
   const crewInvoices =
-    currentCrewRecord && currentUser?.role === ROLES.CREW
+    currentCrewRecord && isCrewUser(currentUser)
       ? appState.jobs
           .filter((job) => job.vendorId === currentCrewRecord.id && job.status === "Completed")
           .map((job) => ({ job, invoice: getInvoiceForJob(appState.invoices, job.id) }))
@@ -2529,7 +2605,7 @@ function AppBuild03() {
         )
       : [];
   const availableCrewWork =
-    currentUser && currentUser.role === ROLES.CREW && currentCrewRecord
+    currentUser && isCrewUser(currentUser) && currentCrewRecord
       ? appState.workOrders.filter((workOrder) => {
           const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
           return canCrewSubmitProposal({
@@ -3257,7 +3333,7 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="Platform Status">
         <StatGrid items={[
-          { label: "Firebase Auth Mapping", value: Object.keys(FIREBASE_ROLE_BRIDGE).length },
+          { label: "Firebase Auth Mapping", value: Object.keys(FIREBASE_ROLE_BRIDGE || {}).length },
           { label: "Active Users", value: appState.users.filter((user) => user.active).length },
           { label: "Pending Vendor Auth", value: normalizedVendors.filter((vendor) => vendor.authStatus === "Pending").length },
           { label: "Invoices Rejected", value: appState.invoices.filter((invoice) => invoice.status === "Rejected").length },
@@ -3622,15 +3698,15 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="Profile">
         <div className="detail-stack">
-          <div className="profile-summary"><div><strong>{currentUser.name}</strong><p>{currentUser.email}</p></div><div className="status-pill active">{currentUser.role}</div></div>
+          <div className="profile-summary"><div><strong>{currentUser.name}</strong><p>{currentUser.email}</p></div><div className="status-pill active">{getDisplayRole(currentUser)}</div></div>
           <article className="detail-card profile-photo-card"><span className="detail-label">Profile Photo</span><strong>Future Profile Picture</strong><p>{profileForm.profilePhotoStatus}</p><button className="secondary-button" onClick={() => showPlaceholder("Profile photo upload will be added in a later build.")}>Photo Upload Coming Soon</button></article>
-          <InputRow><Field label={currentUser.role === ROLES.CREW ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={currentUser.role === ROLES.CREW} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={profileForm.password} onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={currentUser.role === ROLES.CREW} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
+          <InputRow><Field label={isCrewUser(currentUser) ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={profileForm.password} onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
           <div className="form-actions"><button className="primary-button" onClick={saveProfile}>Save Profile</button></div>
         </div>
       </PageSection>
       <PageSection title="Company Profile">
-        <InputRow><Field label="Company Name"><input value={companyProfileForm.companyName} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Contact Name"><input value={companyProfileForm.contactName} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone"><input value={companyProfileForm.phone} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email"><input value={companyProfileForm.email} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Address"><input value={companyProfileForm.address} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, address: event.target.value }))} /></Field><Field label="City"><input value={companyProfileForm.city} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={companyProfileForm.state} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={companyProfileForm.zip} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Billing / Remit Details"><textarea rows="4" value={companyProfileForm.billingDetails} disabled={currentUser.role === ROLES.CREW} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, billingDetails: event.target.value }))} /></Field></InputRow>
-        {currentUser.role === ROLES.CREW ? <p className="detail-muted">Company identity fields are read-only for Crew users in this build.</p> : <div className="form-actions"><button className="primary-button" onClick={saveCompanyProfile}>Save Company Profile</button></div>}
+        <InputRow><Field label="Company Name"><input value={companyProfileForm.companyName} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Contact Name"><input value={companyProfileForm.contactName} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone"><input value={companyProfileForm.phone} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email"><input value={companyProfileForm.email} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Address"><input value={companyProfileForm.address} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, address: event.target.value }))} /></Field><Field label="City"><input value={companyProfileForm.city} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={companyProfileForm.state} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={companyProfileForm.zip} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Billing / Remit Details"><textarea rows="4" value={companyProfileForm.billingDetails} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, billingDetails: event.target.value }))} /></Field></InputRow>
+        {isCrewUser(currentUser) ? <p className="detail-muted">Company identity fields are read-only for Crew users in this build.</p> : <div className="form-actions"><button className="primary-button" onClick={saveCompanyProfile}>Save Company Profile</button></div>}
       </PageSection>
     </div>
   ) : null;
@@ -3663,16 +3739,16 @@ function AppBuild03() {
     if (activeScreen === "reports") return reportsScreen;
     if (currentUser.role === ROLES.OWNER) return ownerDashboard;
     if (AMS_ROLES.includes(currentUser.role)) return amsDashboard;
-    if (currentUser.role === ROLES.CREW && activeScreen === "dashboard") return crewDashboard;
+    if (isCrewUser(currentUser) && activeScreen === "dashboard") return crewDashboard;
     return <UnderConstruction title="Screen Unavailable" message="This screen is reserved for future development." />;
   }
 
-  if (showSplash) {
+  if (showSplash || authRestoring) {
     return <SplashScreen />;
   }
 
   if (!currentUser) {
-    return <LoginScreen email={loginForm.email} password={loginForm.password} onChange={updateLoginField} onLogin={() => handleLogin(loginForm.email, loginForm.password)} onDemoLogin={handleDemoLogin} />;
+    return <LoginScreen email={loginForm.email} password={loginForm.password} onChange={updateLoginField} onLogin={() => handleLogin(loginForm.email, loginForm.password)} onDemoLogin={handleDemoLogin} loading={loginLoading} errorMessage={loginError} />;
   }
 
   return (

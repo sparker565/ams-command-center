@@ -75,6 +75,17 @@ img {
   font-size: 0.95rem;
 }
 
+.login-error {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 14px;
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
 .field {
   display: grid;
   gap: 8px;

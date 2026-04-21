@@ -1,5 +1,6 @@
-import { getAuth, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { app } from "./firebase";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { app, db } from "./lib/firebase";
 
 const firebaseAuth = getAuth(app);
 
@@ -10,6 +11,55 @@ export async function signIn(email, password) {
   } catch (error) {
     return { user: null, error };
   }
+}
+
+export function subscribeToAuthState(callback) {
+  return onAuthStateChanged(firebaseAuth, callback);
+}
+
+export async function loadFirestoreUserByEmail(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { profile: null, error: new Error("Missing authenticated email.") };
+  }
+
+  try {
+    const usersQuery = query(collection(db, "users"), where("email", "==", normalizedEmail));
+    const snapshot = await getDocs(usersQuery);
+    if (snapshot.empty) {
+      return { profile: null, error: null };
+    }
+
+    const userDoc = snapshot.docs[0];
+    return {
+      profile: {
+        id: userDoc.id,
+        ...userDoc.data(),
+      },
+      error: null,
+    };
+  } catch (error) {
+    return { profile: null, error };
+  }
+}
+
+export function getFirebaseErrorMessage(error) {
+  const code = error?.code || "";
+
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+    return "Invalid email or password.";
+  }
+  if (code === "auth/network-request-failed" || code === "unavailable") {
+    return "Network connection failed. Check your connection and try again.";
+  }
+  if (code === "permission-denied") {
+    return "Permission denied loading your user profile. Confirm Firestore rules allow authenticated access to users.";
+  }
+  if (code === "auth/invalid-api-key" || code === "auth/app-not-authorized") {
+    return "Firebase configuration is missing or invalid.";
+  }
+
+  return error?.message || "Firebase sign-in failed. Please try again.";
 }
 
 export async function signOutUser() {

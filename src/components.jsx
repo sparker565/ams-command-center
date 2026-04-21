@@ -87,7 +87,7 @@ export function Header({
             <div className="profile-menu">
               <div className="profile-menu-summary">
                 <strong>{currentUser.name}</strong>
-                <span>{currentUser.role}</span>
+                <span>{currentUser.displayRole || (currentUser.role === ROLES.VENDOR ? "Crew" : currentUser.role)}</span>
               </div>
               <button className="menu-link" onClick={() => onNavigate("profile")}>
                 Profile
@@ -129,7 +129,7 @@ export function Drawer({
         <div className="drawer-user-card">
           <div className="drawer-user-name">{currentUser.name}</div>
           <div className="drawer-user-meta">{currentUser.email}</div>
-          <div className="drawer-user-meta">{currentUser.role}</div>
+          <div className="drawer-user-meta">{currentUser.displayRole || (currentUser.role === ROLES.VENDOR ? "Crew" : currentUser.role)}</div>
         </div>
 
         <nav className="drawer-nav">
@@ -156,7 +156,7 @@ export function Drawer({
   );
 }
 
-export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin }) {
+export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin, loading = false, errorMessage = "" }) {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
@@ -195,14 +195,16 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin })
           </div>
         </label>
 
+        {errorMessage ? <div className="login-error" role="alert">{errorMessage}</div> : null}
+
         <div className="login-actions">
-          <button className="primary-button" onClick={onLogin}>
-            Login
+          <button className="primary-button" onClick={onLogin} disabled={loading}>
+            {loading ? "Signing in..." : "Login"}
           </button>
-          <button className="secondary-button" onClick={() => onDemoLogin("ams")}>
+          <button className="secondary-button" onClick={() => onDemoLogin("ams")} disabled={loading}>
             AMS Demo
           </button>
-          <button className="secondary-button" onClick={() => onDemoLogin("crew")}>
+          <button className="secondary-button" onClick={() => onDemoLogin("crew")} disabled={loading}>
             Crew Demo
           </button>
         </div>

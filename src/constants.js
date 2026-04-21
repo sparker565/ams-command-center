@@ -6,6 +6,7 @@ export const ROLES = {
   OWNER: "Owner",
   AMS_ADMIN: "AMS Admin",
   AMS_MANAGER: "AMS Manager",
+  VENDOR: "Vendor",
   CREW: "Crew",
   CUSTOMER: "Customer",
   OPERATOR: "Operator",
@@ -33,6 +34,11 @@ export const PROPOSAL_STATE = ["none", "opportunity", "under_review", "awarded",
 export const SERVICE_TYPES = ["Snow", "Pre-Landscaping", "Lot Sweeping"];
 
 export const AMS_ROLES = [ROLES.AMS_ADMIN, ROLES.AMS_MANAGER];
+export const CREW_ROLES = [ROLES.CREW, ROLES.VENDOR];
+export const FIREBASE_ROLE_BRIDGE = {
+  [ROLES.AMS_ADMIN]: "ams",
+  [ROLES.VENDOR]: "crew",
+};
 
 export const UNDER_CONSTRUCTION_SCREENS = new Set(["settings", "customer", "operatorPortal", "auditLog"]);
 
@@ -72,6 +78,7 @@ export const DRAWER_MENUS = {
     "settings",
   ],
   [ROLES.CREW]: ["dashboard", "myJobs", "completedJobs", "myInvoices", "profile"],
+  [ROLES.VENDOR]: ["dashboard", "myJobs", "completedJobs", "myInvoices", "profile"],
   [ROLES.OPERATOR]: ["dashboard", "settings"],
   [ROLES.CUSTOMER]: ["dashboard", "settings"],
 };
