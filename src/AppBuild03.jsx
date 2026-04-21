@@ -38,6 +38,8 @@ import {
   UnderConstruction,
 } from "./components";
 import { getFirebaseErrorMessage, loadFirestoreUserByEmail, signIn, signOutUser, subscribeToAuthState } from "./firebaseAuth";
+import { loadFirestoreJobs } from "./firestoreJobs";
+import { loadFirestoreWorkOrders } from "./firestoreWorkOrders";
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -379,6 +381,7 @@ function normalizeStateData(state) {
     invoices,
     workOrders,
     ui: {
+      ...(state.ui || {}),
       currentUserId: currentUserExists ? state.ui?.currentUserId || null : null,
       selectedSiteId,
       activeScreenByRole: {
@@ -949,6 +952,10 @@ function AppBuild03() {
   const [proposalSaveNotice, setProposalSaveNotice] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
   const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [workOrdersLoading, setWorkOrdersLoading] = useState(false);
+  const [workOrdersError, setWorkOrdersError] = useState("");
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobsError, setJobsError] = useState("");
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
@@ -1122,6 +1129,74 @@ function AppBuild03() {
   const selectedTeamMember =
     appState.users.find((user) => user.id === selectedTeamMemberId) || null;
   const nextWorkOrderNumber = getNextAmsWorkOrderNumber(appState.workOrders || []);
+
+  useEffect(() => {
+    if (authRestoring) return;
+    if (!currentUser) return;
+    if (!currentUser.firebaseUid) {
+      setWorkOrdersLoading(false);
+      setWorkOrdersError("");
+      return;
+    }
+
+    let canceled = false;
+    setWorkOrdersLoading(true);
+    setWorkOrdersError("");
+
+    loadFirestoreWorkOrders().then(({ workOrders, error }) => {
+      if (canceled) return;
+      setWorkOrdersLoading(false);
+
+      if (error) {
+        setWorkOrdersError(getFirebaseErrorMessage(error));
+        return;
+      }
+
+      setWorkOrdersError("");
+      updateAppState((current) => ({
+        ...current,
+        workOrders,
+      }));
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, [authRestoring, currentUser?.firebaseUid]);
+
+  useEffect(() => {
+    if (authRestoring) return;
+    if (!currentUser) return;
+    if (!currentUser.firebaseUid) {
+      setJobsLoading(false);
+      setJobsError("");
+      return;
+    }
+
+    let canceled = false;
+    setJobsLoading(true);
+    setJobsError("");
+
+    loadFirestoreJobs().then(({ jobs, error }) => {
+      if (canceled) return;
+      setJobsLoading(false);
+
+      if (error) {
+        setJobsError(getFirebaseErrorMessage(error));
+        return;
+      }
+
+      setJobsError("");
+      updateAppState((current) => ({
+        ...current,
+        jobs,
+      }));
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, [authRestoring, currentUser?.firebaseUid]);
 
   const openScreen = (screen) => {
     if (!currentUser || screen === "logout") return;
@@ -3626,6 +3701,8 @@ function AppBuild03() {
   const jobsScreen = (
     <div className="screen-grid">
       {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
+      {jobsLoading ? <div className="inline-notice info">Loading Firestore jobs...</div> : null}
+      {jobsError ? <div className="inline-notice error">Firestore jobs unavailable: {jobsError}. Showing local fallback.</div> : null}
       <PageSection title="Jobs" action={<button className="primary-button" onClick={() => openModal("job")}>Create Job</button>}>
         <SplitView
           list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
@@ -3642,6 +3719,8 @@ function AppBuild03() {
         action={<button className="primary-button" onClick={() => openModal("workOrder")}>Create Work Order</button>}
       >
         {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
+        {workOrdersLoading ? <div className="inline-notice info">Loading Firestore work orders...</div> : null}
+        {workOrdersError ? <div className="inline-notice error">Firestore work orders unavailable: {workOrdersError}. Showing local fallback.</div> : null}
         <SplitView
           list={
             <div className="list-stack">
