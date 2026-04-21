@@ -60,8 +60,22 @@ export function Header({
 
       <div className="topbar-brand-slot">
         <div className="topbar-brand" aria-label="Current portal brand">
-          <BrandLogo role={currentUser?.role} />
-          {currentUser?.role === ROLES.OWNER ? <BrandLogo role={currentUser?.role} accent className="topbar-accent" /> : null}
+          {currentUser?.role === ROLES.OWNER ? (
+            <>
+              <BrandLogo role={currentUser?.role} />
+              <BrandLogo role={currentUser?.role} accent className="topbar-accent" />
+            </>
+          ) : (
+            <a
+              className="topbar-logo-link"
+              href="https://www.advancedmtnc.com"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open Advanced Maintenance Services website"
+            >
+              <BrandLogo role={currentUser?.role} />
+            </a>
+          )}
         </div>
       </div>
 
@@ -370,13 +384,13 @@ export function SearchBar({ value, onChange, placeholder = "Search" }) {
   );
 }
 
-export function Modal({ open, title, children, onClose, footer }) {
+export function Modal({ open, title, children, onClose, footer, className = "" }) {
   if (!open) return null;
 
   return (
     <>
       <div className="modal-scrim" onClick={onClose} />
-      <div className="modal-shell" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal-shell ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-panel">
           <div className="modal-header">
             <h2>{title}</h2>

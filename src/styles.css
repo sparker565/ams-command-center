@@ -86,6 +86,25 @@ img {
   line-height: 1.4;
 }
 
+.inline-notice {
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.inline-notice.success {
+  border: 1px solid rgba(46, 204, 113, 0.38);
+  background: rgba(46, 204, 113, 0.14);
+  color: #cbf7da;
+}
+
+.inline-notice.error {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -357,6 +376,13 @@ img {
 .topbar-brand {
   align-items: center;
   display: inline-flex;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.topbar-logo-link {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
   text-decoration: none;
 }
@@ -817,11 +843,38 @@ img {
   gap: 14px;
 }
 
+.available-work-scroll {
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+}
+
+.compact-opportunity-grid {
+  align-content: start;
+}
+
 .available-work-card {
   padding: 16px;
   border-radius: 20px;
   border: 1px solid #242424;
   background: rgba(15, 15, 15, 0.95);
+}
+
+.compact-opportunity-card {
+  display: grid;
+  gap: 14px;
+}
+
+.available-work-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.available-work-summary-grid p {
+  margin: 6px 0 0;
+  color: #cabdaf;
 }
 
 .available-work-meta {
@@ -1156,6 +1209,10 @@ img {
   background: rgba(12, 12, 12, 0.96);
 }
 
+.proposal-decision-card .inline-notice {
+  margin-bottom: 12px;
+}
+
 .profile-photo-card {
   display: grid;
   gap: 10px;
@@ -1275,12 +1332,32 @@ img {
     width: 126px;
   }
 
+  .available-work-scroll {
+    max-height: 52vh;
+    padding-right: 2px;
+  }
+
+  .available-work-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .modal-shell {
     padding: 12px;
   }
 
   .modal-panel {
     max-height: calc(100vh - 24px);
+  }
+
+  .crew-opportunity-modal {
+    align-items: end;
+    padding: 0;
+  }
+
+  .crew-opportunity-modal .modal-panel {
+    width: 100%;
+    max-height: 88vh;
+    border-radius: 24px 24px 0 0;
   }
 
   .list-scroll,
