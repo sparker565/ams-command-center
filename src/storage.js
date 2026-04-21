@@ -1,5 +1,26 @@
 import { SESSION_STORAGE_KEY, STORAGE_KEY } from "./constants";
-import { createSeedData } from "./data";
+
+const FIRESTORE_COLLECTION_DEFAULTS = {
+  workOrders: [],
+  jobs: [],
+  vendors: [],
+};
+
+const BASE_STATE_DEFAULTS = {
+  users: [],
+  sites: [],
+  invoices: [],
+  customers: [],
+  operators: [],
+  companyProfiles: {
+    vendors: {},
+  },
+  ui: {
+    currentUserId: null,
+    selectedSiteId: null,
+    activeScreenByRole: {},
+  },
+};
 
 function loadLocalData() {
   try {
@@ -19,62 +40,55 @@ function loadSessionData() {
   }
 }
 
-function mergeSeedRecords(existing = [], seed = [], key = "email") {
-  const seen = new Set(
-    existing
-      .map((record) => String(record?.[key] || record?.id || "").toLowerCase())
-      .filter(Boolean)
-  );
-
-  return [
-    ...existing,
-    ...seed.filter((record) => {
-      const lookup = String(record?.[key] || record?.id || "").toLowerCase();
-      return lookup && !seen.has(lookup);
-    }),
-  ];
+function sanitizeAppState(state = {}) {
+  return {
+    ...BASE_STATE_DEFAULTS,
+    ...state,
+    ...FIRESTORE_COLLECTION_DEFAULTS,
+    users: state.users || [],
+    sites: state.sites || [],
+    proposals: state.proposals || [],
+    invoices: state.invoices || [],
+    customers: state.customers || [],
+    operators: state.operators || [],
+    companyProfiles: {
+      ...(BASE_STATE_DEFAULTS.companyProfiles || {}),
+      ...(state.companyProfiles || {}),
+      vendors: {},
+    },
+    ui: {
+      ...(BASE_STATE_DEFAULTS.ui || {}),
+      ...(state.ui || {}),
+    },
+  };
 }
 
 export function loadAppState() {
   if (typeof window === "undefined") {
-    return createSeedData();
+    return sanitizeAppState();
   }
 
-  const seed = createSeedData();
   const parsed = loadLocalData();
   const session = loadSessionData();
 
-  const mergedUsers = mergeSeedRecords(parsed.users || seed.users || [], seed.users || [], "email");
-  const mergedVendors = mergeSeedRecords(parsed.vendors || seed.vendors || [], seed.vendors || [], "email");
-
-  return {
-    ...seed,
+  return sanitizeAppState({
     ...parsed,
-    users: mergedUsers,
-    vendors: mergedVendors,
-    companyProfiles: {
-      ...seed.companyProfiles,
-      ...(parsed.companyProfiles || {}),
-      vendors: {
-        ...(seed.companyProfiles?.vendors || {}),
-        ...(parsed.companyProfiles?.vendors || {}),
-      },
-    },
+    proposals: [],
     ui: {
-      ...seed.ui,
       ...(parsed.ui || {}),
       ...(session.ui || {}),
     },
-  };
+  });
 }
 
 export function saveAppState(state) {
   if (typeof window === "undefined") return;
 
+  const sanitizedState = sanitizeAppState(state);
   const persistedState = {
-    ...state,
+    ...sanitizedState,
     ui: {
-      ...state.ui,
+      ...sanitizedState.ui,
       currentUserId: null,
       activeScreenByRole: {},
     },
@@ -82,8 +96,8 @@ export function saveAppState(state) {
 
   const sessionState = {
     ui: {
-      currentUserId: state.ui?.currentUserId || null,
-      activeScreenByRole: state.ui?.activeScreenByRole || {},
+      currentUserId: sanitizedState.ui?.currentUserId || null,
+      activeScreenByRole: sanitizedState.ui?.activeScreenByRole || {},
     },
   };
 

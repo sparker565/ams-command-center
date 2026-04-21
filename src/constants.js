@@ -13,6 +13,7 @@ export const ROLES = {
 };
 
 export const WORK_ORDER_STATUS = [
+  "Open",
   "Needs Review",
   "Assigned",
   "In Progress",
@@ -20,9 +21,7 @@ export const WORK_ORDER_STATUS = [
   "Ready for Invoice",
   "Needs Attention",
   "Needs Vendor",
-  "Proposal Needed",
   "Scheduled",
-  "Open Opportunity",
 ];
 
 export const JOB_STATUS = ["Assigned", "In Progress", "Completed", "Need Help", "Canceled"];

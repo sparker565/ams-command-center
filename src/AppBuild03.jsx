@@ -39,6 +39,7 @@ import {
 } from "./components";
 import { getFirebaseErrorMessage, loadFirestoreUserByEmail, signIn, signOutUser, subscribeToAuthState } from "./firebaseAuth";
 import { loadFirestoreJobs } from "./firestoreJobs";
+import { loadFirestoreVendors } from "./firestoreVendors";
 import { loadFirestoreWorkOrders } from "./firestoreWorkOrders";
 
 function createId(prefix) {
@@ -327,6 +328,8 @@ function getNextAmsWorkOrderNumber(workOrders) {
 
 function normalizeWorkOrder(workOrder, proposals, jobs) {
   const linkedJob = jobs.find((job) => job.workOrderId === workOrder.id);
+  const status = String(workOrder.status || "Needs Review").trim();
+  const statusLookup = status.toLowerCase();
   const normalized = {
     ...workOrder,
     amsWorkOrderNumber: workOrder.amsWorkOrderNumber || getNextAmsWorkOrderNumber([workOrder]),
@@ -345,6 +348,12 @@ function normalizeWorkOrder(workOrder, proposals, jobs) {
     seasonStart: workOrder.seasonStart || "",
     seasonEnd: workOrder.seasonEnd || "",
     seasonalServiceType: workOrder.seasonalServiceType || "",
+    status:
+      statusLookup === "open opportunity"
+        ? "Open"
+        : statusLookup === "proposal needed"
+          ? "Needs Vendor"
+          : status,
   };
 
   return {
@@ -401,7 +410,7 @@ function normalizeStateData(state) {
 function getWorkOrderFilterMatch(workOrder, filter) {
   if (filter === "All") return true;
   if (filter === "Open") {
-    return ["Needs Review", "Needs Attention", "Needs Vendor", "Proposal Needed", "Scheduled", "Open Opportunity"].includes(workOrder.status);
+    return ["Needs Review", "Needs Attention", "Needs Vendor", "Scheduled", "Open"].includes(workOrder.status);
   }
   if (filter === "Assigned") return ["Assigned", "In Progress"].includes(workOrder.status);
   if (filter === "Closed") return ["Completed", "Ready for Invoice"].includes(workOrder.status) || isClosedWorkOrder(workOrder.status);
@@ -430,10 +439,12 @@ function searchMatches(values, query) {
 
 function findCrewForUser(vendors, currentUser) {
   if (!currentUser || !isCrewUser(currentUser)) return null;
+  const currentEmail = normalizeEmail(currentUser.email);
 
   return (
     vendors.find((vendor) => vendor.userId && vendor.userId === currentUser.id) ||
-    vendors.find((vendor) => vendor.name === currentUser.name) ||
+    vendors.find((vendor) => normalizeEmail(vendor.userEmail || vendor.email) === currentEmail) ||
+    vendors.find((vendor) => String(vendor.name || "").trim().toLowerCase() === String(currentUser.name || "").trim().toLowerCase()) ||
     null
   );
 }
@@ -451,21 +462,70 @@ function getLatestCrewProposal(proposals, workOrderId, vendorId) {
   return getCrewWorkOrderProposals(proposals, workOrderId, vendorId)[0] || null;
 }
 
+function getVendorCoverageStates(vendor) {
+  return [vendor?.state, ...(vendor?.states || [])]
+    .map((state) => String(state || "").trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function getWorkOrderDispatchState(workOrder, site) {
+  return String(workOrder?.state || site?.state || "").trim().toUpperCase();
+}
+
+function getNormalizedStatus(status) {
+  return String(status || "").trim().toLowerCase();
+}
+
+function isCrewOpenWorkOrderStatus(status) {
+  return ["open", "needs vendor", "open opportunity", "proposal needed"].includes(getNormalizedStatus(status));
+}
+
+function hasAssignedValue(value) {
+  return String(value ?? "").trim() !== "";
+}
+
+function isWorkOrderTrulyAssigned(workOrder) {
+  return (
+    hasAssignedValue(workOrder?.assignedVendorId) ||
+    hasAssignedValue(workOrder?.jobId) ||
+    hasAssignedValue(workOrder?.proposalAwardedAt)
+  );
+}
+
+function getWorkOrderStatusDisplay(workOrder) {
+  const rawStatus = String(workOrder?.status || "Needs Review").trim();
+  const normalizedStatus = getNormalizedStatus(rawStatus);
+
+  if (["assigned", "in progress", "completed", "canceled"].includes(normalizedStatus)) {
+    return rawStatus;
+  }
+
+  if (isWorkOrderTrulyAssigned(workOrder)) {
+    return "Assigned";
+  }
+
+  if (normalizedStatus === "open") {
+    return "Open Opportunity";
+  }
+
+  return rawStatus;
+}
+
+function shouldShowProposalStateBadge(workOrder) {
+  return ["under_review"].includes(workOrder?.proposalState);
+}
+
 function isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs }) {
-  if (!workOrder || !site || !vendor?.active) return false;
-  if (!["Open", "Open Opportunity", "Needs Vendor", "Proposal Needed"].includes(workOrder.status)) return false;
-  if (!workOrder.proposalRequired) return false;
-  if (!["opportunity", "under_review"].includes(workOrder.proposalState)) return false;
-  if (workOrder.assignedVendorId || workOrder.jobId) return false;
-  if (jobs.some((job) => job.workOrderId === workOrder.id)) return false;
+  if (!workOrder || !vendor?.active) return false;
+  if (!isCrewOpenWorkOrderStatus(workOrder.status)) return false;
+  if (isWorkOrderTrulyAssigned(workOrder)) return false;
+  if (jobs.some((job) => String(job.workOrderId || "").trim() === String(workOrder.id || "").trim())) return false;
   if (proposals.some((proposal) => proposal.workOrderId === workOrder.id && proposal.status === "approved")) {
     return false;
   }
-  if (!vendor.states.includes(site.state)) return false;
-  if (workOrder.serviceType && vendor.serviceTypes.length) {
-    return vendor.serviceTypes.includes(workOrder.serviceType);
-  }
-  return true;
+  const workOrderState = getWorkOrderDispatchState(workOrder, site);
+  const vendorStates = getVendorCoverageStates(vendor);
+  return Boolean(workOrderState && vendorStates.includes(workOrderState));
 }
 
 function canCrewSubmitProposal({ workOrder, site, vendor, proposals, jobs }) {
@@ -702,7 +762,7 @@ function getSiteNeedsActionCount({ site, workOrders = [], jobs = [], invoices = 
     return workOrder?.siteId === site.id && proposal.isActivePath && ["submitted", "revision_requested"].includes(proposal.status);
   }).length;
   const workOrderActions = siteWorkOrders.filter((workOrder) =>
-    ["Needs Review", "Needs Attention", "Needs Vendor", "Proposal Needed", "Open Opportunity"].includes(workOrder.status)
+    ["Needs Review", "Needs Attention", "Needs Vendor", "Open"].includes(workOrder.status)
   ).length;
   const invoiceActions = invoices.filter((invoice) =>
     siteJobIds.has(invoice.jobId) && ["Invoice Submitted", "Under Review", "Rejected"].includes(invoice.status)
@@ -835,6 +895,11 @@ function StatusBadge({ value, label }) {
   return <span className={`status-pill ${statusClassName(value)}`}>{label || value}</span>;
 }
 
+function WorkOrderStatusBadge({ workOrder }) {
+  const displayStatus = getWorkOrderStatusDisplay(workOrder);
+  return <StatusBadge value={displayStatus} label={displayStatus} />;
+}
+
 function ProposalStateBadge({ value }) {
   const labels = {
     none: "None",
@@ -956,6 +1021,8 @@ function AppBuild03() {
   const [workOrdersError, setWorkOrdersError] = useState("");
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
+  const [vendorsLoading, setVendorsLoading] = useState(false);
+  const [vendorsError, setVendorsError] = useState("");
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
@@ -1198,6 +1265,40 @@ function AppBuild03() {
     };
   }, [authRestoring, currentUser?.firebaseUid]);
 
+  useEffect(() => {
+    if (authRestoring) return;
+    if (!currentUser) return;
+    if (!currentUser.firebaseUid) {
+      setVendorsLoading(false);
+      setVendorsError("");
+      return;
+    }
+
+    let canceled = false;
+    setVendorsLoading(true);
+    setVendorsError("");
+
+    loadFirestoreVendors().then(({ vendors, error }) => {
+      if (canceled) return;
+      setVendorsLoading(false);
+
+      if (error) {
+        setVendorsError(getFirebaseErrorMessage(error));
+        return;
+      }
+
+      setVendorsError("");
+      updateAppState((current) => ({
+        ...current,
+        vendors,
+      }));
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, [authRestoring, currentUser?.firebaseUid]);
+
   const openScreen = (screen) => {
     if (!currentUser || screen === "logout") return;
     if (!DRAWER_MENUS[currentUser.role]?.includes(screen) && screen !== "profile") return;
@@ -1320,24 +1421,6 @@ function AppBuild03() {
     setProposalSaveNotice(null);
   };
 
-  const completeLocalLogin = (match) => {
-    if (!match) return false;
-
-    updateAppState((current) => ({
-      ...current,
-      ui: {
-        ...current.ui,
-        currentUserId: match.id,
-        activeScreenByRole: {
-          ...(current.ui?.activeScreenByRole || {}),
-          [match.role]: "dashboard",
-        },
-      },
-    }));
-    setLoginForm({ email: "", password: "" });
-    return true;
-  };
-
   const completeFirebaseLogin = (firebaseUser) => {
     if (!firebaseUser) return false;
 
@@ -1372,26 +1455,8 @@ function AppBuild03() {
     return true;
   };
 
-  const findLocalLoginMatch = (email, password) =>
-    getAllUserPool(appState).find((user) => {
-      const expectedPassword =
-        user.password || (isCrewRole(user.role) ? "Crew123" : "");
-      return (
-        user.email.toLowerCase() === email.trim().toLowerCase() &&
-        expectedPassword === password &&
-        user.active
-      );
-    }) || null;
-
   const handleLogin = async (email, password) => {
     setLoginError("");
-    const localMatch = findLocalLoginMatch(email, password);
-    const isDemoLogin = ["amsdemo@amsdemo.local", "crewdemo@amsdemo.local"].includes(normalizeEmail(email));
-    if (isDemoLogin && localMatch) {
-      completeLocalLogin(localMatch);
-      return;
-    }
-
     setLoginLoading(true);
     const firebaseResult = await signIn(email.trim(), password);
     if (!firebaseResult.user) {
@@ -1428,17 +1493,11 @@ function AppBuild03() {
 
   const handleDemoLogin = (type) => {
     setLoginError("");
-    const demoMatch =
-      type === "ams"
-        ? findLocalLoginMatch("amsdemo@amsdemo.local", "DemoAMS123")
-        : findLocalLoginMatch("crewdemo@amsdemo.local", "DemoCrew123");
-
-    if (!demoMatch) {
-      window.alert("Demo login is unavailable.");
+    if (type === "ams") {
+      handleLogin("amsdemo@amsdemo.local", "DemoAMS123");
       return;
     }
-
-    completeLocalLogin(demoMatch);
+    handleLogin("crewdemo@amsdemo.local", "DemoCrew123");
   };
 
   useEffect(() => {
@@ -1973,7 +2032,7 @@ function AppBuild03() {
       siteName: site.name,
       description: workOrderForm.description.trim(),
       serviceType: workOrderForm.serviceType || "General Maintenance",
-      status: directVendor ? "Assigned" : proposalRequired ? "Open Opportunity" : "Needs Review",
+      status: directVendor ? "Assigned" : proposalRequired ? "Open" : "Needs Review",
       proposalRequired,
       proposalState: proposalRequired ? "opportunity" : "none",
       proposalRequestedAt: proposalRequired ? createdAt : "",
@@ -2801,7 +2860,7 @@ function AppBuild03() {
   };
 
   const openWorkOrders = appState.workOrders.filter((entry) =>
-    ["Needs Review", "Needs Attention", "Needs Vendor", "Proposal Needed", "Scheduled", "Open Opportunity"].includes(entry.status)
+    ["Needs Review", "Needs Attention", "Needs Vendor", "Scheduled", "Open"].includes(entry.status)
   );
   const proposalOpportunities = appState.workOrders.filter(
     (entry) => entry.proposalRequired && entry.proposalState === "opportunity"
@@ -2841,7 +2900,7 @@ function AppBuild03() {
       ? appState.ui?.hiddenCrewOpportunityIdsByUser?.[currentCrewRecord.id || currentUser?.id] || []
       : [];
   const availableCrewWork =
-    currentUser && isCrewUser(currentUser) && currentCrewRecord
+    currentUser && isCrewUser(currentUser) && currentCrewRecord && !workOrdersLoading && !vendorsLoading && !jobsLoading
       ? appState.workOrders.filter((workOrder) => {
           if (hiddenCrewOpportunityIds.includes(workOrder.id)) return false;
           const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
@@ -2854,6 +2913,34 @@ function AppBuild03() {
           });
         })
       : [];
+  const crewAvailableWorkEmptyText = (() => {
+    if (workOrdersLoading || vendorsLoading || jobsLoading) return "";
+    if (!currentUser || !isCrewUser(currentUser)) return "Crew login is required to view available work.";
+    if (!currentCrewRecord) return "No matching Crew company profile was found for this login.";
+    if (!appState.workOrders.length) return "No work orders are available yet.";
+
+    const visibleWorkOrders = appState.workOrders.filter((workOrder) => !hiddenCrewOpportunityIds.includes(workOrder.id));
+    const unassignedWorkOrders = visibleWorkOrders.filter(
+      (workOrder) => !isWorkOrderTrulyAssigned(workOrder)
+    );
+
+    if (!unassignedWorkOrders.length) return "No unassigned work orders are available right now.";
+
+    const openWorkOrders = unassignedWorkOrders.filter((workOrder) => isCrewOpenWorkOrderStatus(workOrder.status));
+    if (!openWorkOrders.length) return "No open Crew opportunities are available right now.";
+
+    const vendorStates = getVendorCoverageStates(currentCrewRecord);
+    const stateMatchedWorkOrders = openWorkOrders.filter((workOrder) => {
+      const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
+      const workOrderState = getWorkOrderDispatchState(workOrder, site);
+      return Boolean(workOrderState && vendorStates.includes(workOrderState));
+    });
+
+    if (!vendorStates.length) return "Your Crew profile does not have a service state assigned yet.";
+    if (!stateMatchedWorkOrders.length) return `No eligible work orders are available in ${vendorStates.join(", ")} right now.`;
+
+    return "No available work matches your Crew profile right now.";
+  })();
   const selectedCrewOpportunity =
     availableCrewWork.find((workOrder) => workOrder.id === selectedCrewOpportunityId) || null;
   const selectedCrewOpportunitySite = selectedCrewOpportunity
@@ -3300,7 +3387,7 @@ function AppBuild03() {
         <div className="proposal-summary-grid">
           <div><span className="detail-label">Brand Layer</span><p>SparkCommand Systems</p></div>
           <div><span className="detail-label">Customer Layer</span><p>Advanced Maintenance Services</p></div>
-          <div><span className="detail-label">Seeded Records</span><p>{appState.workOrders.length} work orders / {appState.jobs.length} jobs / {appState.invoices.length} invoices</p></div>
+          <div><span className="detail-label">Operational Records</span><p>{appState.workOrders.length} work orders / {appState.jobs.length} jobs / {appState.invoices.length} invoices</p></div>
           <div><span className="detail-label">Owner Visibility</span><p>Hidden from AMS and Crew menus</p></div>
         </div>
       </PageSection>
@@ -3331,6 +3418,10 @@ function AppBuild03() {
 
   const crewAvailableWorkSection = (
     <PageSection title="Available Work">
+      {workOrdersLoading || vendorsLoading || jobsLoading ? <div className="inline-notice info">Loading available work...</div> : null}
+      {workOrdersError ? <div className="inline-notice error">Available work could not load work orders: {workOrdersError}</div> : null}
+      {vendorsError ? <div className="inline-notice error">Available work could not load Crew company profile: {vendorsError}</div> : null}
+      {jobsError ? <div className="inline-notice error">Available work could not verify assigned jobs: {jobsError}</div> : null}
       {availableCrewWork.length ? (
         <div className="available-work-scroll contained-scroll">
           <div className="available-work-grid compact-opportunity-grid">
@@ -3345,12 +3436,12 @@ function AppBuild03() {
                     <strong>{workOrder.siteName}</strong>
                     <p className="detail-muted">{workOrder.serviceType || "Service not specified"}</p>
                   </div>
-                  <span className={`status-pill ${workOrder.status.toLowerCase().replace(/\s+/g, "-")}`}>{workOrder.status}</span>
+                  <WorkOrderStatusBadge workOrder={workOrder} />
                 </div>
                 <div className="available-work-summary-grid">
-                  <div><span className="detail-label">State</span><p>{site?.state || "Unknown"}</p></div>
+                  <div><span className="detail-label">State</span><p>{getWorkOrderDispatchState(workOrder, site) || "Unknown"}</p></div>
                   <div><span className="detail-label">Timing</span><p>{timing ? formatDate(timing) : "Not set"}</p></div>
-                  <div><span className="detail-label">Opportunity</span><p><ProposalStateBadge value={workOrder.proposalState} /></p></div>
+                  <div><span className="detail-label">Opportunity</span><p><WorkOrderStatusBadge workOrder={workOrder} /></p></div>
                   <div><span className="detail-label">Proposal</span><p>{latestProposal ? <ProposalStatusBadge value={latestProposal.status} /> : "Not submitted"}</p></div>
                 </div>
                 <div className="proposal-card-actions">
@@ -3362,7 +3453,7 @@ function AppBuild03() {
           })}
           </div>
         </div>
-      ) : <EmptyState title="No available work" text="New matching proposal opportunities will appear here." />}
+      ) : workOrdersLoading || vendorsLoading || jobsLoading ? null : <EmptyState title="No available work" text={crewAvailableWorkEmptyText || "New matching proposal opportunities will appear here."} />}
     </PageSection>
   );
 
@@ -3620,7 +3711,7 @@ function AppBuild03() {
         <div className="detail-stack">
           <div className="detail-card"><span className="detail-label">Owner Note</span><p>Owner portal remains hidden and only opens for the mapped platform account.</p></div>
           <div className="detail-card"><span className="detail-label">Operational Note</span><p>Cold starts return to splash and login, while in-session navigation is preserved until the app is fully closed.</p></div>
-          <div className="detail-card"><span className="detail-label">Data Note</span><p>Seeded operational coverage includes 17 sites, 7 vendors, and 51 work orders.</p></div>
+          <div className="detail-card"><span className="detail-label">Data Note</span><p>Operational Work Orders, Jobs, and Vendors load from Firestore only. Empty Firestore collections show clean empty states.</p></div>
         </div>
       </PageSection>
     </div>
@@ -3630,8 +3721,8 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="System Controls">
         <div className="form-actions">
-          <button className="secondary-button" onClick={() => window.alert("Firebase Auth is active. Firestore sync remains intentionally disabled in this build.")}>Auth Status</button>
-          <button className="secondary-button" onClick={() => window.alert("Operational seed data persists locally. Session state clears on full close.")}>Session Policy</button>
+          <button className="secondary-button" onClick={() => window.alert("Firebase Auth and Firestore role routing are active.")}>Auth Status</button>
+          <button className="secondary-button" onClick={() => window.alert("Operational Work Orders, Jobs, and Vendors are loaded from Firestore. Session state only preserves navigation while the app is open.")}>Session Policy</button>
           <button className="secondary-button" onClick={() => window.alert("Audit log is reserved as a placeholder for the next controlled release.")}>Audit Queue</button>
         </div>
       </PageSection>
@@ -3645,7 +3736,7 @@ function AppBuild03() {
           { label: "Completed Jobs", value: appState.jobs.filter((job) => job.status === "Completed").length },
           { label: "Ready for Invoice", value: readyForInvoiceJobs.length },
           { label: "Needs Attention", value: appState.workOrders.filter((workOrder) => workOrder.status === "Needs Attention").length },
-          { label: "Open Opportunities", value: appState.workOrders.filter((workOrder) => workOrder.status === "Open Opportunity").length },
+          { label: "Open Opportunities", value: appState.workOrders.filter((workOrder) => workOrder.status === "Open").length },
         ]} />
       </PageSection>
     </div>
@@ -3689,6 +3780,8 @@ function AppBuild03() {
 
   const crewsScreen = (
     <div className="screen-grid">
+      {vendorsLoading ? <div className="inline-notice info">Loading Firestore vendors...</div> : null}
+      {vendorsError ? <div className="inline-notice error">Firestore vendors unavailable: {vendorsError}.</div> : null}
       <PageSection title="Vendors" action={<button className="primary-button" onClick={() => openModal("vendor")}>Add Vendor</button>}>
         <SplitView
           list={<div className="list-stack"><SearchBar value={crewSearch} onChange={setCrewSearch} placeholder="Search vendors" /><div className="list-scroll"><DataTable columns={[{ key: "company", label: "Vendor Company", render: (row) => row.companyName || row.name }, { key: "contact", label: "Vendor Contact", render: (row) => row.contactName || "Not set" }, { key: "serviceType", label: "Primary Service", render: (row) => row.serviceType }, { key: "states", label: "States", render: (row) => row.states.join(", ") }, { key: "status", label: "Status", render: (row) => (row.active ? "Active" : "Inactive") }]} rows={filteredCrews} selectedRowId={selectedCrew?.id} onRowClick={(row) => setSelectedCrewId(row.id)} emptyTitle="No vendors" emptyText="Add a vendor before assigning jobs." /></div></div>}
@@ -3702,10 +3795,10 @@ function AppBuild03() {
     <div className="screen-grid">
       {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
       {jobsLoading ? <div className="inline-notice info">Loading Firestore jobs...</div> : null}
-      {jobsError ? <div className="inline-notice error">Firestore jobs unavailable: {jobsError}. Showing local fallback.</div> : null}
+      {jobsError ? <div className="inline-notice error">Firestore jobs unavailable: {jobsError}.</div> : null}
       <PageSection title="Jobs" action={<button className="primary-button" onClick={() => openModal("job")}>Create Job</button>}>
         <SplitView
-          list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
+          list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs available" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
           detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedJob.workType)}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedJob.price)}</p></div>{selectedJob.workType === "recurring" && isAmsViewer ? <div><span className="detail-label">Recurring Vendor Cost</span><p>{formatMoney(selectedJob.recurringVendorCost)}</p></div> : null}{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{isAmsViewer ? <SellControl sellValue={getJobSellDraft(selectedJob)} pricingStatus={getPricingStatus(selectedJob)} editing={editingJobSellId === selectedJob.id || getPricingStatus(selectedJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedJob)} onChange={(value) => updateJobSellDraft(selectedJob.id, value)} onSave={() => saveJobSellForJob(selectedJob)} /> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
         />
       </PageSection>
@@ -3720,7 +3813,7 @@ function AppBuild03() {
       >
         {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
         {workOrdersLoading ? <div className="inline-notice info">Loading Firestore work orders...</div> : null}
-        {workOrdersError ? <div className="inline-notice error">Firestore work orders unavailable: {workOrdersError}. Showing local fallback.</div> : null}
+        {workOrdersError ? <div className="inline-notice error">Firestore work orders unavailable: {workOrdersError}.</div> : null}
         <SplitView
           list={
             <div className="list-stack">
@@ -3736,12 +3829,12 @@ function AppBuild03() {
                     { key: "siteName", label: "Site", render: (row) => row.siteName },
                     { key: "serviceType", label: "Service Type", render: (row) => row.serviceType },
                     { key: "bids", label: "Bids", render: (row) => getBidCountForWorkOrder(appState.proposals, row.id) },
-                    { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "status", label: "Status", render: (row) => <WorkOrderStatusBadge workOrder={row} /> },
                   ]}
                   rows={filteredWorkOrders}
                   selectedRowId={selectedWorkOrder?.id}
                   onRowClick={(row) => selectWorkOrder(row.id)}
-                  emptyTitle="No work orders"
+                  emptyTitle="No work orders available"
                   emptyText="New work orders will appear here."
                 />
               </div>
@@ -3757,8 +3850,8 @@ function AppBuild03() {
                       <p>{selectedWorkOrder.description}</p>
                     </div>
                     <div className="proposal-summary-badges">
-                      <ProposalStateBadge value={selectedWorkOrder.proposalState} />
-                      <StatusBadge value={selectedWorkOrder.status} />
+                      {shouldShowProposalStateBadge(selectedWorkOrder) ? <ProposalStateBadge value={selectedWorkOrder.proposalState} /> : null}
+                      <WorkOrderStatusBadge workOrder={selectedWorkOrder} />
                     </div>
                   </div>
                   <div className="proposal-summary-grid">
@@ -3840,7 +3933,7 @@ function AppBuild03() {
       <PageSection title="Proposals">
         <SplitView
           list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={proposalSearch} onChange={setProposalSearch} placeholder="Search proposals" /><FilterRow label="Status" value={proposalStatusFilter} options={["All", "submitted", "revision_requested", "approved", "rejected", "canceled", "completed"]} onChange={setProposalStatusFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "crew", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "site", label: "Site", render: (row) => appState.workOrders.find((entry) => entry.id === row.workOrderId)?.siteName || "Unknown" }, { key: "price", label: "Submitted Cost", render: (row) => formatMoney(row.submittedPrice) }, { key: "reviewedPrice", label: "Reviewed Cost", render: (row) => formatMoney(row.reviewedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }]} rows={filteredProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Proposal submissions will appear here." /></div></div>}
-            detail={<div className="detail-stack"><PageSection title="Work Order Summary">{selectedProposal ? (() => { const workOrder = appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId); return workOrder ? <div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{workOrder.siteName}</strong><p>{workOrder.description}</p></div><div className="proposal-summary-badges"><ProposalStateBadge value={workOrder.proposalState} /><StatusBadge value={workOrder.status} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{workOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{workOrder.serviceType}</p></div>{showExternalWorkOrder ? <div><span className="detail-label">External Ref</span><p>{workOrder.externalWorkOrderNumber || "Not set"}</p></div> : null}<div><span className="detail-label">Photos Required</span><p>{workOrder.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div></div></div> : <EmptyState title="No work order found" text="This proposal is missing its work order reference." />; })() : <EmptyState title="No proposal selected" text="Choose a proposal to review." />}</PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedProposal ? appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId) : null)}</PageSection></div>}
+            detail={<div className="detail-stack"><PageSection title="Work Order Summary">{selectedProposal ? (() => { const workOrder = appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId); return workOrder ? <div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{workOrder.siteName}</strong><p>{workOrder.description}</p></div><div className="proposal-summary-badges">{shouldShowProposalStateBadge(workOrder) ? <ProposalStateBadge value={workOrder.proposalState} /> : null}<WorkOrderStatusBadge workOrder={workOrder} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{workOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{workOrder.serviceType}</p></div>{showExternalWorkOrder ? <div><span className="detail-label">External Ref</span><p>{workOrder.externalWorkOrderNumber || "Not set"}</p></div> : null}<div><span className="detail-label">Photos Required</span><p>{workOrder.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div></div></div> : <EmptyState title="No work order found" text="This proposal is missing its work order reference." />; })() : <EmptyState title="No proposal selected" text="Choose a proposal to review." />}</PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedProposal ? appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId) : null)}</PageSection></div>}
         />
       </PageSection>
     </div>
@@ -4064,14 +4157,14 @@ function AppBuild03() {
                 <p>{selectedCrewOpportunity.serviceType || "Service type not specified"}</p>
               </div>
               <div className="proposal-summary-badges">
-                <ProposalStateBadge value={selectedCrewOpportunity.proposalState} />
+                <WorkOrderStatusBadge workOrder={selectedCrewOpportunity} />
                 {selectedCrewOpportunityLatestProposal ? <ProposalStatusBadge value={selectedCrewOpportunityLatestProposal.status} /> : null}
               </div>
             </div>
             <div className="proposal-summary-grid">
               <div><span className="detail-label">Site Address</span><p>{selectedCrewOpportunitySite?.address || "Not available"}</p></div>
-              <div><span className="detail-label">State</span><p>{selectedCrewOpportunitySite?.state || "Unknown"}</p></div>
-              <div><span className="detail-label">Status</span><p><StatusBadge value={selectedCrewOpportunity.status} /></p></div>
+              <div><span className="detail-label">State</span><p>{getWorkOrderDispatchState(selectedCrewOpportunity, selectedCrewOpportunitySite) || "Unknown"}</p></div>
+              <div><span className="detail-label">Status</span><p><WorkOrderStatusBadge workOrder={selectedCrewOpportunity} /></p></div>
               <div><span className="detail-label">Timing</span><p>{formatDate(selectedCrewOpportunity.seasonStart || selectedCrewOpportunity.proposalRequestedAt || selectedCrewOpportunity.createdAt)}</p></div>
               <div><span className="detail-label">Photos Required</span><p>{selectedCrewOpportunity.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div>
               <div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedCrewOpportunity.workType)}</p></div>

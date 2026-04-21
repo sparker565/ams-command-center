@@ -10,7 +10,11 @@ function toIsoString(value) {
 }
 
 function normalizeWorkOrderStatus(status) {
-  return status || "Needs Review";
+  const normalized = String(status || "Needs Review").trim();
+  const lookup = normalized.toLowerCase();
+  if (lookup === "open opportunity") return "Open";
+  if (lookup === "proposal needed") return "Needs Vendor";
+  return normalized;
 }
 
 export function normalizeFirestoreWorkOrder(docSnapshot) {
