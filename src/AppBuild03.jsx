@@ -515,6 +515,36 @@ function shouldShowProposalStateBadge(workOrder) {
   return ["under_review"].includes(workOrder?.proposalState);
 }
 
+function createDemoSessionUser(type) {
+  if (type === "ams") {
+    return normalizeUser({
+      id: "demo-ams-session",
+      name: "AMS Demo",
+      email: "amsdemo@amsdemo.local",
+      role: ROLES.AMS_ADMIN,
+      displayRole: "AMS Admin",
+      active: true,
+      accessStatus: "Active",
+      authStatus: "Demo",
+      companyName: "Advanced Maintenance Services",
+      demo: true,
+    });
+  }
+
+  return normalizeUser({
+    id: "demo-crew-session",
+    name: "Crew Demo",
+    email: "crewdemo@amsdemo.local",
+    role: ROLES.VENDOR,
+    displayRole: "Crew",
+    active: true,
+    accessStatus: "Active",
+    authStatus: "Demo",
+    companyName: "Crew Demo Company",
+    demo: true,
+  });
+}
+
 function isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs }) {
   if (!workOrder || !vendor?.active) return false;
   if (!isCrewOpenWorkOrderStatus(workOrder.status)) return false;
@@ -1019,10 +1049,13 @@ function AppBuild03() {
   const [showProfilePassword, setShowProfilePassword] = useState(false);
   const [workOrdersLoading, setWorkOrdersLoading] = useState(false);
   const [workOrdersError, setWorkOrdersError] = useState("");
+  const [workOrdersLoaded, setWorkOrdersLoaded] = useState(false);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
+  const [jobsLoaded, setJobsLoaded] = useState(false);
   const [vendorsLoading, setVendorsLoading] = useState(false);
   const [vendorsError, setVendorsError] = useState("");
+  const [vendorsLoaded, setVendorsLoaded] = useState(false);
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
@@ -1199,20 +1232,26 @@ function AppBuild03() {
 
   useEffect(() => {
     if (authRestoring) return;
-    if (!currentUser) return;
+    if (!currentUser) {
+      setWorkOrdersLoaded(false);
+      return;
+    }
     if (!currentUser.firebaseUid) {
       setWorkOrdersLoading(false);
       setWorkOrdersError("");
+      setWorkOrdersLoaded(true);
       return;
     }
 
     let canceled = false;
     setWorkOrdersLoading(true);
     setWorkOrdersError("");
+    setWorkOrdersLoaded(false);
 
     loadFirestoreWorkOrders().then(({ workOrders, error }) => {
       if (canceled) return;
       setWorkOrdersLoading(false);
+      setWorkOrdersLoaded(true);
 
       if (error) {
         setWorkOrdersError(getFirebaseErrorMessage(error));
@@ -1233,20 +1272,26 @@ function AppBuild03() {
 
   useEffect(() => {
     if (authRestoring) return;
-    if (!currentUser) return;
+    if (!currentUser) {
+      setJobsLoaded(false);
+      return;
+    }
     if (!currentUser.firebaseUid) {
       setJobsLoading(false);
       setJobsError("");
+      setJobsLoaded(true);
       return;
     }
 
     let canceled = false;
     setJobsLoading(true);
     setJobsError("");
+    setJobsLoaded(false);
 
     loadFirestoreJobs().then(({ jobs, error }) => {
       if (canceled) return;
       setJobsLoading(false);
+      setJobsLoaded(true);
 
       if (error) {
         setJobsError(getFirebaseErrorMessage(error));
@@ -1267,20 +1312,26 @@ function AppBuild03() {
 
   useEffect(() => {
     if (authRestoring) return;
-    if (!currentUser) return;
+    if (!currentUser) {
+      setVendorsLoaded(false);
+      return;
+    }
     if (!currentUser.firebaseUid) {
       setVendorsLoading(false);
       setVendorsError("");
+      setVendorsLoaded(true);
       return;
     }
 
     let canceled = false;
     setVendorsLoading(true);
     setVendorsError("");
+    setVendorsLoaded(false);
 
     loadFirestoreVendors().then(({ vendors, error }) => {
       if (canceled) return;
       setVendorsLoading(false);
+      setVendorsLoaded(true);
 
       if (error) {
         setVendorsError(getFirebaseErrorMessage(error));
@@ -1462,7 +1513,7 @@ function AppBuild03() {
     if (!firebaseResult.user) {
       setLoginLoading(false);
       setLoginError(getFirebaseErrorMessage(firebaseResult.error));
-      return;
+      return false;
     }
 
     const profileResult = await loadFirestoreUserByEmail(firebaseResult.user.email || email);
@@ -1470,13 +1521,13 @@ function AppBuild03() {
       await signOutUser();
       setLoginLoading(false);
       setLoginError(getFirebaseErrorMessage(profileResult.error));
-      return;
+      return false;
     }
     if (!profileResult.profile) {
       await signOutUser();
       setLoginLoading(false);
       setLoginError("Authenticated user was not found in the Firestore users collection.");
-      return;
+      return false;
     }
 
     const firebaseUser = buildUserFromFirestoreProfile(profileResult.profile, firebaseResult.user, appState);
@@ -1484,20 +1535,32 @@ function AppBuild03() {
       await signOutUser();
       setLoginLoading(false);
       setLoginError("Your Firestore user role is not supported for this portal.");
-      return;
+      return false;
     }
 
     completeFirebaseLogin(firebaseUser);
     setLoginLoading(false);
+    return true;
   };
 
-  const handleDemoLogin = (type) => {
+  const handleDemoLogin = async (type) => {
     setLoginError("");
-    if (type === "ams") {
-      handleLogin("amsdemo@amsdemo.local", "DemoAMS123");
-      return;
+    const demoEmail = type === "ams" ? "amsdemo@amsdemo.local" : "crewdemo@amsdemo.local";
+    const demoPassword = type === "ams" ? "DemoAMS123" : "DemoCrew123";
+    const signedIn = await handleLogin(demoEmail, demoPassword);
+
+    if (!signedIn) {
+      const demoUser = createDemoSessionUser(type);
+      completeFirebaseLogin(demoUser);
+      setLoginError("");
+      setLoginLoading(false);
+      showActionNotice(
+        "info",
+        type === "ams"
+          ? "AMS Demo started in local demo mode. Firestore operational data remains available only to authenticated Firebase users."
+          : "Crew Demo started in local demo mode. Use a real Crew login linked to a Firestore vendor profile to view live available work."
+      );
     }
-    handleLogin("crewdemo@amsdemo.local", "DemoCrew123");
   };
 
   useEffect(() => {
@@ -2899,8 +2962,11 @@ function AppBuild03() {
     currentCrewRecord
       ? appState.ui?.hiddenCrewOpportunityIdsByUser?.[currentCrewRecord.id || currentUser?.id] || []
       : [];
+  const crewOpportunityDataReady =
+    Boolean(currentUser) &&
+    (!currentUser.firebaseUid || (workOrdersLoaded && jobsLoaded && vendorsLoaded));
   const availableCrewWork =
-    currentUser && isCrewUser(currentUser) && currentCrewRecord && !workOrdersLoading && !vendorsLoading && !jobsLoading
+    currentUser && isCrewUser(currentUser) && currentCrewRecord && crewOpportunityDataReady
       ? appState.workOrders.filter((workOrder) => {
           if (hiddenCrewOpportunityIds.includes(workOrder.id)) return false;
           const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
@@ -2914,8 +2980,11 @@ function AppBuild03() {
         })
       : [];
   const crewAvailableWorkEmptyText = (() => {
-    if (workOrdersLoading || vendorsLoading || jobsLoading) return "";
+    if (!crewOpportunityDataReady) return "";
     if (!currentUser || !isCrewUser(currentUser)) return "Crew login is required to view available work.";
+    if (currentUser.demo && !currentUser.firebaseUid) {
+      return "Crew Demo is active, but it is not linked to a Firestore Crew company profile. Use a real Crew test login to view live available work.";
+    }
     if (!currentCrewRecord) return "No matching Crew company profile was found for this login.";
     if (!appState.workOrders.length) return "No work orders are available yet.";
 
@@ -3418,7 +3487,7 @@ function AppBuild03() {
 
   const crewAvailableWorkSection = (
     <PageSection title="Available Work">
-      {workOrdersLoading || vendorsLoading || jobsLoading ? <div className="inline-notice info">Loading available work...</div> : null}
+      {!crewOpportunityDataReady ? <div className="inline-notice info">Loading available work...</div> : null}
       {workOrdersError ? <div className="inline-notice error">Available work could not load work orders: {workOrdersError}</div> : null}
       {vendorsError ? <div className="inline-notice error">Available work could not load Crew company profile: {vendorsError}</div> : null}
       {jobsError ? <div className="inline-notice error">Available work could not verify assigned jobs: {jobsError}</div> : null}
@@ -3453,7 +3522,7 @@ function AppBuild03() {
           })}
           </div>
         </div>
-      ) : workOrdersLoading || vendorsLoading || jobsLoading ? null : <EmptyState title="No available work" text={crewAvailableWorkEmptyText || "New matching proposal opportunities will appear here."} />}
+      ) : !crewOpportunityDataReady ? null : <EmptyState title="No available work" text={crewAvailableWorkEmptyText || "New matching proposal opportunities will appear here."} />}
     </PageSection>
   );
 
