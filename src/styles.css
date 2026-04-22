@@ -1371,6 +1371,14 @@ img {
   font-weight: 700;
 }
 
+.site-import-modal .modal-panel {
+  max-width: 1120px;
+}
+
+.site-import-preview {
+  max-height: 430px;
+}
+
 .checkbox-inline {
   display: inline-flex;
   align-items: center;

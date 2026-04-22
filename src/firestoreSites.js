@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toIsoString(value) {
@@ -22,23 +22,38 @@ function buildAddressLine({ streetAddress, city, state, zip, fallbackAddress }) 
 
 export function normalizeFirestoreSite(docSnapshot) {
   const data = docSnapshot.data() || {};
-  const streetAddress = data.streetAddress || data.addressLine1 || "";
+  const streetAddress = data.streetAddress || data.address || data.addressLine1 || "";
   const city = data.city || "";
   const state = String(data.state || "").trim().toUpperCase();
   const zip = data.zip || data.zipCode || "";
+  const notes = data.notes || data.internalNotes || "";
+  const contactName = data.contactName || data.contact || "";
 
   return {
     id: docSnapshot.id,
     firestoreId: docSnapshot.id,
     name: data.name || data.siteName || "Firestore Site",
+    client: data.client || "",
     streetAddress,
     city,
     state,
     zip,
     address: buildAddressLine({ streetAddress, city, state, zip, fallbackAddress: data.address || "" }),
+    status: data.status || "Active",
+    siteNumber: data.siteNumber || "",
+    serviceTypes: Array.isArray(data.serviceTypes)
+      ? data.serviceTypes
+      : String(data.serviceTypes || "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
     manager: data.manager || "",
-    contact: data.contact || "",
-    internalNotes: data.internalNotes || data.notes || "",
+    contact: contactName,
+    contactName,
+    contactPhone: data.contactPhone || "",
+    contactEmail: data.contactEmail || "",
+    internalNotes: notes,
+    notes,
     assignedVendorId: data.assignedVendorId || "",
     assignedVendorName: data.assignedVendorName || "",
     assignedCrewContactId: data.assignedCrewContactId || "",
@@ -52,22 +67,37 @@ export function normalizeFirestoreSite(docSnapshot) {
 
 function serializeSiteCreate(site) {
   const state = String(site.state || "").trim().toUpperCase();
-  const streetAddress = site.streetAddress || "";
+  const streetAddress = site.streetAddress || site.address || "";
   const city = site.city || "";
   const zip = site.zip || "";
+  const serviceTypes = Array.isArray(site.serviceTypes)
+    ? site.serviceTypes.map((value) => String(value || "").trim()).filter(Boolean)
+    : String(site.serviceTypes || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+  const notes = site.notes ?? site.internalNotes ?? "";
+  const contactName = site.contactName || site.contact || "";
 
   return {
     name: site.name || site.siteName || "Site",
     siteName: site.name || site.siteName || "Site",
+    client: site.client || "",
     streetAddress,
     city,
     state,
     zip,
     address: buildAddressLine({ streetAddress, city, state, zip, fallbackAddress: site.address || "" }),
+    status: site.status || "Active",
+    siteNumber: site.siteNumber || "",
+    serviceTypes,
     manager: site.manager || "",
-    contact: site.contact || "",
-    internalNotes: site.internalNotes || "",
-    notes: site.internalNotes || site.notes || "",
+    contact: contactName,
+    contactName,
+    contactPhone: site.contactPhone || "",
+    contactEmail: site.contactEmail || "",
+    internalNotes: notes,
+    notes,
     assignedVendorId: site.assignedVendorId || "",
     assignedVendorName: site.assignedVendorName || "",
     assignedCrewContactId: site.assignedCrewContactId || "",
@@ -92,6 +122,28 @@ export async function createFirestoreSite(site) {
     };
   } catch (error) {
     return { site: null, error };
+  }
+}
+
+export async function createFirestoreSitesBatch(sites) {
+  try {
+    if (!sites.length) throw new Error("No sites were provided for import.");
+
+    const batch = writeBatch(db);
+    const createdSites = sites.map((site) => {
+      const payload = serializeSiteCreate(site);
+      const ref = doc(collection(db, "sites"));
+      batch.set(ref, payload);
+      return normalizeFirestoreSite({
+        id: ref.id,
+        data: () => payload,
+      });
+    });
+
+    await batch.commit();
+    return { sites: createdSites, error: null };
+  } catch (error) {
+    return { sites: [], error };
   }
 }
 

@@ -55,9 +55,16 @@ import {
   normalizeProposalStatus,
   updateFirestoreProposal,
 } from "./firestoreProposals";
-import { createFirestoreSite, deleteFirestoreSite, loadFirestoreSites, updateFirestoreSite } from "./firestoreSites";
+import {
+  createFirestoreSite,
+  createFirestoreSitesBatch,
+  deleteFirestoreSite,
+  loadFirestoreSites,
+  updateFirestoreSite,
+} from "./firestoreSites";
 import { createFirestoreVendor, deleteFirestoreVendor, loadFirestoreVendors, updateFirestoreVendor } from "./firestoreVendors";
 import { createFirestoreWorkOrder, loadFirestoreWorkOrders, updateFirestoreWorkOrder } from "./firestoreWorkOrders";
+import { parseSiteImportFile, SITE_IMPORT_HEADERS } from "./siteImport";
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1195,6 +1202,11 @@ function AppBuild03() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState("");
   const [invoicesLoaded, setInvoicesLoaded] = useState(false);
+  const [siteImportRows, setSiteImportRows] = useState([]);
+  const [siteImportError, setSiteImportError] = useState("");
+  const [siteImportSummary, setSiteImportSummary] = useState("");
+  const [siteImportFileName, setSiteImportFileName] = useState("");
+  const [siteImportLoading, setSiteImportLoading] = useState(false);
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
@@ -2073,6 +2085,129 @@ function AppBuild03() {
       },
     }));
     showActionNotice("success", `${targetSite.name || "Site"} removed.`);
+  };
+
+  const resetSiteImport = () => {
+    setSiteImportRows([]);
+    setSiteImportError("");
+    setSiteImportSummary("");
+    setSiteImportFileName("");
+    setSiteImportLoading(false);
+  };
+
+  const openSiteImport = () => {
+    resetSiteImport();
+    setActiveModal("siteImport");
+  };
+
+  const handleSiteImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    resetSiteImport();
+    if (!file) return;
+
+    setSiteImportFileName(file.name);
+    setSiteImportLoading(true);
+
+    try {
+      const result = await parseSiteImportFile(file);
+      if (result.error) {
+        setSiteImportError(result.error);
+        setSiteImportRows([]);
+        return;
+      }
+
+      const existingSiteNumbers = new Set(
+        appState.sites
+          .map((site) => String(site.siteNumber || "").trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      const rows = result.rows.map((row) => {
+        const siteNumber = String(row.site.siteNumber || "").trim().toLowerCase();
+        if (!siteNumber || !existingSiteNumbers.has(siteNumber)) return row;
+        const errors = [...row.errors, "siteNumber already exists in Firestore"];
+        return { ...row, valid: false, errors };
+      });
+
+      setSiteImportRows(rows);
+      setSiteImportSummary(
+        `${rows.filter((row) => row.valid).length} valid row(s), ${rows.filter((row) => !row.valid).length} row(s) need attention.`
+      );
+    } catch (error) {
+      setSiteImportError(error?.message || "Site upload could not be parsed.");
+      setSiteImportRows([]);
+    } finally {
+      setSiteImportLoading(false);
+    }
+  };
+
+  const confirmSiteImport = async () => {
+    if (!currentUser?.firebaseUid) {
+      setSiteImportError("Site imports require a Firebase-authenticated AMS session.");
+      return;
+    }
+
+    const invalidRows = siteImportRows.filter((row) => !row.valid);
+    if (invalidRows.length) {
+      setSiteImportError("Fix invalid rows before importing sites.");
+      return;
+    }
+
+    const validRows = siteImportRows.filter((row) => row.valid);
+    if (!validRows.length) {
+      setSiteImportError("Upload and preview valid site rows before importing.");
+      return;
+    }
+
+    setSiteImportLoading(true);
+    setSiteImportError("");
+
+    const createdAt = new Date().toISOString();
+    const sitesToCreate = validRows.map(({ site }) => ({
+      name: site.name,
+      client: site.client,
+      streetAddress: site.address,
+      address: site.address,
+      city: site.city,
+      state: site.state,
+      zip: site.zip,
+      status: site.status,
+      siteNumber: site.siteNumber,
+      serviceTypes: site.serviceTypes,
+      notes: site.notes,
+      internalNotes: site.notes,
+      contactName: site.contactName,
+      contact: site.contactName,
+      contactPhone: site.contactPhone,
+      contactEmail: site.contactEmail,
+      siteMapStatus: "Upload Coming Soon",
+      geoFenceStatus: "Geo Fence Setup Coming Soon",
+      createdAt,
+      createdBy: currentUser.email || currentUser.name || "",
+    }));
+
+    const result = await createFirestoreSitesBatch(sitesToCreate);
+    setSiteImportLoading(false);
+
+    if (result.error) {
+      setSiteImportError(`Site import failed: ${getFirebaseErrorMessage(result.error)}`);
+      setSiteImportSummary(`0 imported, ${validRows.length} failed.`);
+      return;
+    }
+
+    updateAppState((current) => ({
+      ...current,
+      sites: [
+        ...result.sites,
+        ...current.sites.filter((site) => !result.sites.some((created) => created.id === site.id)),
+      ],
+    }));
+
+    if (result.sites[0]?.id) setSelectedSite(result.sites[0].id);
+    setSiteImportRows([]);
+    setSiteImportSummary(`${result.sites.length} imported, 0 failed.`);
+    showActionNotice("success", `${result.sites.length} site${result.sites.length === 1 ? "" : "s"} imported.`);
   };
 
   const saveVendor = async () => {
@@ -3957,7 +4092,27 @@ function AppBuild03() {
       )
   );
   const filteredSites = appState.sites.filter((site) =>
-      searchMatches([site.name, site.address, site.streetAddress, site.city, site.state, site.zip, site.assignedVendorName, site.internalNotes], siteSearch)
+      searchMatches(
+        [
+          site.name,
+          site.client,
+          site.address,
+          site.streetAddress,
+          site.city,
+          site.state,
+          site.zip,
+          site.status,
+          site.siteNumber,
+          Array.isArray(site.serviceTypes) ? site.serviceTypes.join(", ") : site.serviceTypes,
+          site.assignedVendorName,
+          site.internalNotes,
+          site.notes,
+          site.contactName,
+          site.contactPhone,
+          site.contactEmail,
+        ],
+        siteSearch
+      )
     );
   const filteredCrews = normalizedVendors.filter((vendor) =>
       searchMatches(
@@ -4737,13 +4892,25 @@ function AppBuild03() {
     </div>
   );
 
+  const siteImportValidCount = siteImportRows.filter((row) => row.valid).length;
+  const siteImportInvalidCount = siteImportRows.filter((row) => !row.valid).length;
+  const canConfirmSiteImport = Boolean(siteImportRows.length) && siteImportInvalidCount === 0 && !siteImportLoading;
+
   const sitesScreen = (
     <div className="screen-grid">
       {sitesLoading ? <div className="inline-notice info">Loading Firestore sites...</div> : null}
       {sitesError ? <div className="inline-notice error">Firestore sites unavailable: {sitesError}.</div> : null}
-      <PageSection title="Sites" action={<button className="primary-button" onClick={() => openModal("site")}>Create Site</button>}>
+      <PageSection
+        title="Sites"
+        action={
+          <div className="form-actions">
+            {isAmsViewer ? <button className="secondary-button" onClick={openSiteImport}>Upload Sites</button> : null}
+            <button className="primary-button" onClick={() => openModal("site")}>Create Site</button>
+          </div>
+        }
+      >
         <SplitView
-          list={<div className="list-stack"><SearchBar value={siteSearch} onChange={setSiteSearch} placeholder="Search sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "address", label: "Address", render: (row) => row.address }, { key: "assigned", label: "Primary Assigned Vendor", render: (row) => row.assignedVendorName || "Unassigned" }, { key: "state", label: "State", render: (row) => row.state }]} rows={filteredSites} selectedRowId={appState.ui.selectedSiteId} onRowClick={(row) => setSelectedSite(row.id)} emptyTitle="No sites" emptyText="Add a site to start routing work orders." /></div></div>}
+          list={<div className="list-stack"><SearchBar value={siteSearch} onChange={setSiteSearch} placeholder="Search sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "siteNumber", label: "Site #", render: (row) => row.siteNumber || "Not set" }, { key: "address", label: "Address", render: (row) => row.address }, { key: "assigned", label: "Primary Assigned Vendor", render: (row) => row.assignedVendorName || "Unassigned" }, { key: "state", label: "State", render: (row) => row.state }]} rows={filteredSites} selectedRowId={appState.ui.selectedSiteId} onRowClick={(row) => setSelectedSite(row.id)} emptyTitle="No sites" emptyText="Add a site to start routing work orders." /></div></div>}
           detail={selectedSite ? <div className="detail-stack"><SiteDetailsCard site={selectedSite} relatedWorkOrderCount={appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length} needsActionCount={selectedSiteNeedsActionCount} /><div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Street Address</span><p>{selectedSite.streetAddress || "Not set"}</p></div><div><span className="detail-label">City</span><p>{selectedSite.city || "Not set"}</p></div><div><span className="detail-label">State</span><p>{selectedSite.state || "Not set"}</p></div><div><span className="detail-label">ZIP Code</span><p>{selectedSite.zip || "Not set"}</p></div><div><span className="detail-label">Manager</span><p>{selectedSite.manager || "Not set"}</p></div><div><span className="detail-label">Contact</span><p>{selectedSite.contact || "Not set"}</p></div><div><span className="detail-label">Primary Assigned Vendor</span><p>{selectedSite.assignedVendorName || "Unassigned"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedSite.assignedCrewContactName || normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.contactName || "Not set"}</p></div><div><span className="detail-label">Vendor Phone</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone ? <a href={`tel:${normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone}`}>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Vendor Email</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.email || "Not set"}</p></div></div></div><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>{selectedSite.siteMapStatus}</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>{selectedSite.geoFenceStatus}</p></article></div><PageSection title="Site Service Log"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "date", label: "Date of Service", render: (row) => formatDate(row.completedAt || row.canceledAt) }, { key: "service", label: "Service Performed", render: (row) => row.serviceType }, { key: "workType", label: "Work Type", render: (row) => getWorkTypeLabel(row.workType) }, { key: "vendor", label: "Vendor", render: (row) => row.vendorName }, { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }, { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) }, { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedAt) }, { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" }, { key: "wo", label: "AMS Work Order", render: (row) => row.workOrder?.amsWorkOrderNumber || "Not available" }, { key: "invoice", label: "Invoice Status", render: (row) => row.invoice?.status || "Not Invoiced" }]} rows={selectedSiteServiceLog} emptyTitle="No site service history" emptyText="Completed and canceled services for this site will appear here." /></div></PageSection><div className="form-actions"><button className="secondary-button" onClick={() => startEditSite(selectedSite)}>Edit Site</button><button className="secondary-button danger-button" onClick={() => removeSite(selectedSite.id)}>Remove Site</button></div></div> : <EmptyState title="No site selected" text="Select a site to view details." />}
         />
       </PageSection>
@@ -5170,6 +5337,67 @@ function AppBuild03() {
           <div className="modal-reference">AMS Work Order Number: {nextWorkOrderNumber}</div>
           <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Work Type"><select value={workOrderForm.workType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workType: event.target.value, recurringFrequency: event.target.value === "recurring" ? current.recurringFrequency : "", recurringVendorCost: event.target.value === "recurring" ? current.recurringVendorCost : "", recurringPricingNotes: event.target.value === "recurring" ? current.recurringPricingNotes : "", seasonStart: event.target.value === "seasonal" ? current.seasonStart : "", seasonEnd: event.target.value === "seasonal" ? current.seasonEnd : "", seasonalServiceType: event.target.value === "seasonal" ? current.seasonalServiceType : "" }))}><option value="one_time">One-Time</option><option value="recurring">Recurring</option><option value="seasonal">Seasonal/Triggered</option></select></Field><Field label="Assign Vendor Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field>{workOrderForm.workflowType === "direct" && workOrderForm.workType !== "recurring" ? <Field label="Vendor Cost"><input value={workOrderForm.vendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, vendorCost: event.target.value }))} placeholder="Enter vendor cost" /></Field> : null}<Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field>{workOrderForm.workType === "recurring" ? <><Field label="Recurring Frequency"><select value={workOrderForm.recurringFrequency} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringFrequency: event.target.value }))}><option value="">Select frequency</option><option value="weekly">Weekly</option><option value="bi_weekly">Bi-weekly</option><option value="monthly">Monthly</option></select></Field><Field label="Vendor Cost"><input value={workOrderForm.recurringVendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringVendorCost: event.target.value, vendorCost: event.target.value }))} placeholder="Enter recurring vendor cost" /></Field></> : null}{workOrderForm.workType === "seasonal" ? <><Field label="Season Start"><input type="date" value={workOrderForm.seasonStart} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonStart: event.target.value }))} /></Field><Field label="Season End"><input type="date" value={workOrderForm.seasonEnd} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonEnd: event.target.value }))} /></Field><Field label="Seasonal Service"><select value={workOrderForm.seasonalServiceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonalServiceType: event.target.value }))}><option value="">Select service</option><option value="Plowing">Plowing</option><option value="Shoveling">Shoveling</option><option value="Salting">Salting</option></select></Field></> : null}</InputRow>
         <label className="checkbox-inline"><input type="checkbox" checked={workOrderForm.requireBeforeAfterPhotos} onChange={(event) => setWorkOrderForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.checked }))} />Require before and after photos</label>
+      </Modal>
+
+      <Modal
+        open={activeModal === "siteImport"}
+        title="Upload Sites"
+        onClose={() => {
+          closeModal();
+          resetSiteImport();
+        }}
+        className="site-import-modal"
+        footer={
+          <div className="form-actions">
+            <button
+              className="secondary-button"
+              onClick={() => {
+                closeModal();
+                resetSiteImport();
+              }}
+            >
+              Cancel
+            </button>
+            <button className="primary-button" onClick={confirmSiteImport} disabled={!canConfirmSiteImport}>
+              {siteImportLoading ? "Importing..." : `Import ${siteImportValidCount || ""} Sites`}
+            </button>
+          </div>
+        }
+      >
+        <div className="detail-stack">
+          <div className="detail-card">
+            <span className="detail-label">AMS Site Template</span>
+            <p className="detail-muted">
+              Upload a .xlsx or .csv file with exactly these headers: {SITE_IMPORT_HEADERS.join(", ")}.
+            </p>
+            <input type="file" accept=".xlsx,.csv" onChange={handleSiteImportFile} disabled={siteImportLoading} />
+            {siteImportFileName ? <p className="detail-muted">Selected file: {siteImportFileName}</p> : null}
+          </div>
+          {siteImportError ? <div className="inline-notice error">{siteImportError}</div> : null}
+          {siteImportSummary ? <div className="inline-notice info">{siteImportSummary}</div> : null}
+          {siteImportRows.length ? (
+            <div className="list-scroll compact-scroll contained-scroll site-import-preview">
+              <DataTable
+                columns={[
+                  { key: "row", label: "Row", render: (row) => row.rowNumber },
+                  { key: "valid", label: "Status", render: (row) => (row.valid ? "Ready" : "Needs Fix") },
+                  { key: "siteNumber", label: "Site #", render: (row) => row.site.siteNumber },
+                  { key: "name", label: "Name", render: (row) => row.site.name },
+                  { key: "client", label: "Client", render: (row) => row.site.client },
+                  { key: "address", label: "Address", render: (row) => `${row.site.address}, ${row.site.city}, ${row.site.state} ${row.site.zip}` },
+                  { key: "services", label: "Services", render: (row) => row.site.serviceTypes.join(", ") },
+                  { key: "errors", label: "Validation", render: (row) => row.errors.join("; ") || "OK" },
+                ]}
+                rows={siteImportRows}
+                emptyTitle="No rows previewed"
+                emptyText="Upload an AMS site template to preview import rows."
+              />
+            </div>
+          ) : null}
+          {siteImportInvalidCount ? (
+            <p className="detail-muted">Import is blocked until invalid rows are corrected and the file is uploaded again.</p>
+          ) : null}
+        </div>
       </Modal>
 
       <Modal open={activeModal === "site"} title={editingSiteId ? "Edit Site" : "Create Site"} onClose={closeModal} footer={<button className="primary-button" onClick={saveSite}>{editingSiteId ? "Update Site" : "Add Site"}</button>}><InputRow><Field label="Site Name"><input value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Street Address"><input value={siteForm.streetAddress} onChange={(event) => setSiteForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={siteForm.city} onChange={(event) => setSiteForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={siteForm.state} maxLength={2} onChange={(event) => setSiteForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={siteForm.zip} onChange={(event) => setSiteForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Primary Assigned Vendor"><select value={siteForm.assignedVendorId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedVendorId: event.target.value, assignedCrewContactId: "" }))}><option value="">Unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Crew Contact"><select value={siteForm.assignedCrewContactId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedCrewContactId: event.target.value }))}><option value="">Not set</option>{appState.users.filter((user) => user.role === ROLES.CREW && (!siteForm.assignedVendorId || normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId)?.userId === user.id)).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></Field><Field label="Internal Notes"><textarea rows="4" value={siteForm.internalNotes} onChange={(event) => setSiteForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>Upload Coming Soon</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>Geo Fence Setup Coming Soon</p></article></div></Modal>
