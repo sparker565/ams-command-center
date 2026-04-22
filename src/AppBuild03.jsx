@@ -274,7 +274,7 @@ function normalizeJob(job) {
   return {
     ...job,
     description: job.description || "",
-    price: job.price ?? "",
+    price: job.price ?? job.cost ?? "",
     sell: normalizedSell || null,
     sellPrice: normalizedSell,
     pricingStatus: job.pricingStatus || (normalizedSell ? "set" : "not_set"),
@@ -601,6 +601,10 @@ function canCrewSubmitProposal({ workOrder, site, vendor, proposals, jobs }) {
 
 function getJobSellValue(job) {
   return String(job?.sell ?? job?.sellPrice ?? "").trim();
+}
+
+function getJobCostValue(job) {
+  return String(job?.cost ?? job?.price ?? "").trim();
 }
 
 function getPricingStatus(job) {
@@ -993,6 +997,7 @@ function InvoiceStatusBadge({ value }) {
 
 function SellControl({
   sellValue,
+  costValue,
   pricingStatus,
   editing,
   onStartEdit,
@@ -1006,6 +1011,10 @@ function SellControl({
     return (
       <div className="detail-card sell-lock-card">
         <div className="proposal-summary-grid">
+          <div>
+            <span className="detail-label">Cost</span>
+            <p>{formatMoney(costValue)}</p>
+          </div>
           <div>
             <span className="detail-label">Sell Price</span>
             <p>{formatMoney(sellValue)}</p>
@@ -1031,6 +1040,9 @@ function SellControl({
   return (
     <div className="detail-stack">
       <InputRow>
+        <Field label="Current Cost">
+          <input value={formatMoney(costValue)} readOnly disabled />
+        </Field>
         <Field label="AMS Sell Price (Optional)">
           <input
             value={sellValue}
@@ -1044,6 +1056,57 @@ function SellControl({
         <div className="form-actions">
           <button className="secondary-button" onClick={onSave}>
             Save Sell
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CostControl({
+  costValue,
+  editing,
+  onStartEdit,
+  onChange,
+  onSave,
+  disabled = false,
+}) {
+  if (!editing) {
+    return (
+      <div className="detail-card sell-lock-card">
+        <div className="proposal-summary-grid">
+          <div>
+            <span className="detail-label">Cost</span>
+            <p>{formatMoney(costValue)}</p>
+          </div>
+        </div>
+        {!disabled ? (
+          <div className="form-actions">
+            <button className="secondary-button" onClick={onStartEdit} aria-label="Edit job cost">
+              Edit Cost
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="detail-stack">
+      <InputRow>
+        <Field label="Crew Cost">
+          <input
+            value={costValue}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+            placeholder="Enter crew cost"
+          />
+        </Field>
+      </InputRow>
+      {!disabled ? (
+        <div className="form-actions">
+          <button className="secondary-button" onClick={onSave}>
+            Save Cost
           </button>
         </div>
       ) : null}
@@ -1121,8 +1184,11 @@ function AppBuild03() {
   });
   const [jobSellDrafts, setJobSellDrafts] = useState({});
   const [accountingSellForm, setAccountingSellForm] = useState("");
+  const [accountingCostForm, setAccountingCostForm] = useState("");
   const [editingJobSellId, setEditingJobSellId] = useState(null);
   const [editingAccountingSellJobId, setEditingAccountingSellJobId] = useState(null);
+  const [editingAccountingCostJobId, setEditingAccountingCostJobId] = useState(null);
+  const [dataRefreshLoading, setDataRefreshLoading] = useState(false);
   const [sellSaveNotice, setSellSaveNotice] = useState(null);
   const [weatherCommandState, setWeatherCommandState] = useState([]);
   const [weatherLoaded, setWeatherLoaded] = useState(false);
@@ -1274,6 +1340,76 @@ function AppBuild03() {
   const selectedTeamMember =
     appState.users.find((user) => user.id === selectedTeamMemberId) || null;
   const nextWorkOrderNumber = getNextAmsWorkOrderNumber(appState.workOrders || []);
+
+  const refreshFirestoreData = async ({ silent = false } = {}) => {
+    if (!currentUser?.firebaseUid) {
+      if (!silent) showActionNotice("error", "Sign in with Firebase before refreshing live data.");
+      return false;
+    }
+
+    setDataRefreshLoading(true);
+    setWorkOrdersLoading(true);
+    setJobsLoading(true);
+    setVendorsLoading(true);
+    setSitesLoading(true);
+    setProposalsLoading(true);
+    setInvoicesLoading(true);
+
+    const [workOrdersResult, jobsResult, vendorsResult, sitesResult, proposalsResult, invoicesResult] =
+      await Promise.all([
+        loadFirestoreWorkOrders(),
+        loadFirestoreJobs(),
+        loadFirestoreVendors(),
+        loadFirestoreSites(),
+        loadFirestoreProposals(),
+        loadFirestoreInvoices(),
+      ]);
+
+    setDataRefreshLoading(false);
+    setWorkOrdersLoading(false);
+    setJobsLoading(false);
+    setVendorsLoading(false);
+    setSitesLoading(false);
+    setProposalsLoading(false);
+    setInvoicesLoading(false);
+    setWorkOrdersLoaded(true);
+    setJobsLoaded(true);
+    setVendorsLoaded(true);
+    setSitesLoaded(true);
+    setProposalsLoaded(true);
+    setInvoicesLoaded(true);
+
+    const errorMessages = [
+      ["work orders", workOrdersResult.error, setWorkOrdersError],
+      ["jobs", jobsResult.error, setJobsError],
+      ["vendors", vendorsResult.error, setVendorsError],
+      ["sites", sitesResult.error, setSitesError],
+      ["proposals", proposalsResult.error, setProposalsError],
+      ["invoices", invoicesResult.error, setInvoicesError],
+    ].reduce((messages, [label, error, setError]) => {
+      const message = error ? getFirebaseErrorMessage(error) : "";
+      setError(message);
+      return message ? [...messages, `${label}: ${message}`] : messages;
+    }, []);
+
+    updateAppState((current) => ({
+      ...current,
+      ...(workOrdersResult.error ? {} : { workOrders: workOrdersResult.workOrders }),
+      ...(jobsResult.error ? {} : { jobs: jobsResult.jobs }),
+      ...(vendorsResult.error ? {} : { vendors: vendorsResult.vendors }),
+      ...(sitesResult.error ? {} : { sites: sitesResult.sites }),
+      ...(proposalsResult.error ? {} : { proposals: proposalsResult.proposals }),
+      ...(invoicesResult.error ? {} : { invoices: invoicesResult.invoices }),
+    }));
+
+    if (errorMessages.length) {
+      showActionNotice("error", `Refresh completed with errors: ${errorMessages.join("; ")}`);
+      return false;
+    }
+
+    if (!silent) showActionNotice("success", "Live Firestore data refreshed.");
+    return true;
+  };
 
   useEffect(() => {
     if (authRestoring) return;
@@ -1837,7 +1973,7 @@ function AppBuild03() {
       updateAppState((current) => ({
         ...current,
         sites: editingSiteId
-          ? current.sites.map((site) => (site.id === editingSiteId ? { ...site, ...siteRecord } : site))
+          ? current.sites.map((site) => (site.id === editingSiteId ? { ...site, ...savedSite } : site))
           : [savedSite, ...current.sites.filter((site) => site.id !== savedSite.id)],
       }));
 
@@ -3374,6 +3510,47 @@ function AppBuild03() {
     return true;
   };
 
+  const saveJobCost = async (jobId, costValue) => {
+    if (!jobId || !(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER)) {
+      setSellSaveNotice({ type: "error", message: "You do not have permission to save crew cost." });
+      return false;
+    }
+    const targetJob = appState.jobs.find((job) => job.id === jobId);
+    if (!targetJob) {
+      setSellSaveNotice({ type: "error", message: "Cost was not saved because the selected job was not found." });
+      return false;
+    }
+
+    const costUpdates = {
+      cost: costValue,
+      price: costValue,
+      costSetBy: currentUser?.id || currentUser?.email || null,
+      costSetAt: new Date().toISOString(),
+    };
+
+    if (currentUser?.firebaseUid) {
+      const result = await updateFirestoreJob(targetJob.firestoreId || targetJob.id, costUpdates);
+      if (result.error) {
+        setSellSaveNotice({ type: "error", message: `Cost was not saved: ${getFirebaseErrorMessage(result.error)}` });
+        return false;
+      }
+    }
+
+    updateAppState((current) => ({
+      ...current,
+      jobs: current.jobs.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              ...costUpdates,
+            }
+          : job
+      ),
+    }));
+    setSellSaveNotice({ type: "success", message: `Cost saved for ${targetJob.siteName}.` });
+    return true;
+  };
+
   const getJobSellDraft = (job) => {
     if (!job) return "";
     return jobSellDrafts[job.id] ?? getJobSellValue(job);
@@ -3404,6 +3581,12 @@ function AppBuild03() {
     if (!selectedInvoiceJob) return;
     const saved = await saveJobSell(selectedInvoiceJob.id, accountingSellForm);
     if (saved) setEditingAccountingSellJobId(null);
+  };
+
+  const saveAccountingCost = async () => {
+    if (!selectedInvoiceJob) return;
+    const saved = await saveJobCost(selectedInvoiceJob.id, accountingCostForm);
+    if (saved) setEditingAccountingCostJobId(null);
   };
 
   const saveInvoice = async () => {
@@ -3930,6 +4113,7 @@ function AppBuild03() {
 
   useEffect(() => {
     setAccountingSellForm(getJobSellValue(selectedInvoiceJob));
+    setAccountingCostForm(getJobCostValue(selectedInvoiceJob));
   }, [selectedInvoiceJob]);
 
   useEffect(() => {
@@ -3972,6 +4156,7 @@ function AppBuild03() {
 
   const amsQuickActions = [
     { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
+    { key: "refresh", label: dataRefreshLoading ? "Refreshing..." : "Refresh", onClick: () => refreshFirestoreData() },
     { key: "createWorkOrder", label: "Create Work Order", onClick: () => openModal("workOrder"), featured: true },
     { key: "workOrders", label: "Work Orders", onClick: () => openScreen("workOrders") },
     { key: "jobs", label: "Jobs", onClick: () => openScreen("jobs") },
@@ -3982,6 +4167,7 @@ function AppBuild03() {
   ];
   const crewQuickActions = [
     { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
+    { key: "refresh", label: dataRefreshLoading ? "Refreshing..." : "Refresh", onClick: () => refreshFirestoreData() },
     { key: "availableWork", label: "Available Work", onClick: () => openScreen("availableWork") },
     { key: "myJobs", label: "My Jobs", onClick: () => openScreen("myJobs") },
     { key: "mySites", label: "My Sites", onClick: () => openScreen("mySites") },
@@ -4489,7 +4675,7 @@ function AppBuild03() {
       <PageSection title="Jobs" action={<button className="primary-button" onClick={() => openModal("job")}>Create Job</button>}>
         <SplitView
           list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs available" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
-          detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedJob.workType)}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedJob.price)}</p></div>{selectedJob.workType === "recurring" && isAmsViewer ? <div><span className="detail-label">Recurring Vendor Cost</span><p>{formatMoney(selectedJob.recurringVendorCost)}</p></div> : null}{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{isAmsViewer ? <SellControl sellValue={getJobSellDraft(selectedJob)} pricingStatus={getPricingStatus(selectedJob)} editing={editingJobSellId === selectedJob.id || getPricingStatus(selectedJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedJob)} onChange={(value) => updateJobSellDraft(selectedJob.id, value)} onSave={() => saveJobSellForJob(selectedJob)} /> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
+          detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedJob.workType)}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(getJobCostValue(selectedJob))}</p></div>{selectedJob.workType === "recurring" && isAmsViewer ? <div><span className="detail-label">Recurring Vendor Cost</span><p>{formatMoney(selectedJob.recurringVendorCost)}</p></div> : null}{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{isAmsViewer ? <SellControl sellValue={getJobSellDraft(selectedJob)} costValue={getJobCostValue(selectedJob)} pricingStatus={getPricingStatus(selectedJob)} editing={editingJobSellId === selectedJob.id || getPricingStatus(selectedJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedJob)} onChange={(value) => updateJobSellDraft(selectedJob.id, value)} onSave={() => saveJobSellForJob(selectedJob)} /> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
         />
       </PageSection>
     </div>
@@ -4565,7 +4751,7 @@ function AppBuild03() {
                     <button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button>
                   </div>
                 </div>
-                {isAmsViewer && selectedWorkOrderJob ? <div className="detail-card"><SellControl sellValue={getJobSellDraft(selectedWorkOrderJob)} pricingStatus={getPricingStatus(selectedWorkOrderJob)} editing={editingJobSellId === selectedWorkOrderJob.id || getPricingStatus(selectedWorkOrderJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedWorkOrderJob)} onChange={(value) => updateJobSellDraft(selectedWorkOrderJob.id, value)} onSave={() => saveJobSellForJob(selectedWorkOrderJob)} /></div> : null}
+                {isAmsViewer && selectedWorkOrderJob ? <div className="detail-card"><SellControl sellValue={getJobSellDraft(selectedWorkOrderJob)} costValue={getJobCostValue(selectedWorkOrderJob)} pricingStatus={getPricingStatus(selectedWorkOrderJob)} editing={editingJobSellId === selectedWorkOrderJob.id || getPricingStatus(selectedWorkOrderJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedWorkOrderJob)} onChange={(value) => updateJobSellDraft(selectedWorkOrderJob.id, value)} onSave={() => saveJobSellForJob(selectedWorkOrderJob)} /></div> : null}
                 {selectedWorkOrder.proposalRequired ? (
                   <>
                     <PageSection title={`Proposal Review List (${getBidCountForWorkOrder(appState.proposals, selectedWorkOrder.id)} bids)`}>
@@ -4638,8 +4824,8 @@ function AppBuild03() {
       {invoicesError ? <div className="inline-notice error">Invoice data could not be loaded: {invoicesError}</div> : null}
       <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Submitted", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted").length }, { label: "Approved", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Approved").length }, { label: "Rejected", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Rejected").length }, { label: "Paid", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Paid").length }]} /></PageSection>
       <SplitView
-        list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(row.price) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><div className="list-toolbar"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><FilterRow label="Status" value={invoiceStatusFilter} options={["All", ...INVOICE_STATUS]} onChange={setInvoiceStatusFilter} /></div><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
-        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoiceJob?.status || selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Approve Invoice</button><button className="secondary-button danger-button" onClick={() => updateInvoiceStatus("Rejected")} disabled={selectedInvoice.status === "Paid"}>Reject Invoice</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid / Close Job</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
+        list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(getJobCostValue(row)) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><div className="list-toolbar"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><FilterRow label="Status" value={invoiceStatusFilter} options={["All", ...INVOICE_STATUS]} onChange={setInvoiceStatusFilter} /></div><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
+        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoiceJob?.status || selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(getJobCostValue(selectedInvoiceJob) || selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <><CostControl costValue={accountingCostForm} editing={editingAccountingCostJobId === selectedInvoiceJob.id} onStartEdit={() => setEditingAccountingCostJobId(selectedInvoiceJob.id)} onChange={setAccountingCostForm} onSave={saveAccountingCost} disabled={selectedInvoice.status === "Paid"} /><SellControl sellValue={accountingSellForm} costValue={accountingCostForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /></> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Approve Invoice</button><button className="secondary-button danger-button" onClick={() => updateInvoiceStatus("Rejected")} disabled={selectedInvoice.status === "Paid"}>Reject Invoice</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid / Close Job</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
       />
     </div>
   );
