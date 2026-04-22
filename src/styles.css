@@ -161,6 +161,48 @@ img {
   color: #f7f1eb;
 }
 
+.pricing-reference-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #242424;
+  border-radius: 12px;
+  background: rgba(255, 159, 69, 0.08);
+}
+
+.pricing-reference-row .detail-label {
+  margin-bottom: 0;
+}
+
+.editable-money-row {
+  min-width: 0;
+}
+
+.money-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.money-inline p {
+  margin: 0;
+}
+
+.inline-edit-button {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #3b332d;
+  background: #1b1b1b;
+  color: #ffb780;
+}
+
 .login-actions,
 .form-actions,
 .table-actions,

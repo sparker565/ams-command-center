@@ -11,6 +11,7 @@ import {
   ROLES,
   SCREEN_LABELS,
   SERVICE_TYPES,
+  normalizeServiceType,
   UNDER_CONSTRUCTION_SCREENS,
   WORK_ORDER_FILTERS,
   WORK_ORDER_STATUS,
@@ -42,6 +43,7 @@ import {
   createFirestoreInvoiceAndMarkJob,
   loadFirestoreInvoices,
   normalizeInvoiceStatus,
+  updateFirestoreJobAndInvoiceCost,
   updateFirestoreInvoiceAndJob,
   updateFirestoreInvoice,
 } from "./firestoreInvoices";
@@ -76,6 +78,10 @@ function formatMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function getCanonicalSellValue(record) {
+  return String(record?.sell ?? record?.sellPrice ?? "").trim();
 }
 
 function buildAddressLine({ streetAddress, city, state, zip, fallbackAddress }) {
@@ -267,7 +273,7 @@ function normalizeProposal(proposal) {
 }
 
 function normalizeJob(job) {
-  const normalizedSell = String(job.sell ?? job.sellPrice ?? "").trim();
+  const normalizedSell = getCanonicalSellValue(job);
   const startedAt = job.startedAt || job.startTime || "";
   const startTime = job.startTime || startedAt;
   const completedTime = job.completedTime || job.completedAt || "";
@@ -275,8 +281,7 @@ function normalizeJob(job) {
     ...job,
     description: job.description || "",
     price: job.price ?? job.cost ?? "",
-    sell: normalizedSell || null,
-    sellPrice: normalizedSell,
+    sell: normalizedSell,
     pricingStatus: job.pricingStatus || (normalizedSell ? "set" : "not_set"),
     sellSetBy: job.sellSetBy || null,
     sellSetAt: job.sellSetAt || "",
@@ -285,7 +290,8 @@ function normalizeJob(job) {
     completedTime,
     completedAt: completedTime,
     serviceDate: job.serviceDate || completedTime || "",
-    servicePerformed: job.servicePerformed || job.serviceType || "",
+    serviceType: normalizeServiceType(job.serviceType) || job.serviceType || "",
+    servicePerformed: normalizeServiceType(job.servicePerformed || job.serviceType) || "",
     scope: job.scope || job.description || "",
     notes: job.notes || "",
   };
@@ -314,6 +320,9 @@ function normalizeInvoice(invoice) {
     status: normalizeInvoiceStatus(invoice.status),
     notes: invoice.notes || "",
     completedAt: invoice.completedAt || "",
+    lastCostUpdatedAt: invoice.lastCostUpdatedAt || "",
+    lastCostUpdatedBy: invoice.lastCostUpdatedBy || "",
+    adjustments: invoice.adjustments || [],
     vendorCompany: {
       companyName: invoice.vendorCompany?.companyName || "",
       contactName: invoice.vendorCompany?.contactName || "",
@@ -600,11 +609,22 @@ function canCrewSubmitProposal({ workOrder, site, vendor, proposals, jobs }) {
 }
 
 function getJobSellValue(job) {
-  return String(job?.sell ?? job?.sellPrice ?? "").trim();
+  return getCanonicalSellValue(job);
 }
 
 function getJobCostValue(job) {
   return String(job?.cost ?? job?.price ?? "").trim();
+}
+
+function normalizeCostForCompare(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numeric = Number(trimmed);
+  return Number.isNaN(numeric) ? trimmed : String(numeric);
+}
+
+function didCostValueChange(previousCost, nextCost) {
+  return normalizeCostForCompare(previousCost) !== normalizeCostForCompare(nextCost);
 }
 
 function getPricingStatus(job) {
@@ -659,7 +679,7 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
     siteName: workOrder.siteName,
     vendorId: vendor.id,
     vendorName: vendor.name,
-    serviceType: workOrder.serviceType,
+    serviceType: normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
     description: workOrder.description,
     price: getInheritedJobCost(workOrder, price),
     ...buildPricingFields({ sell, currentUser }),
@@ -667,7 +687,7 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
     startTime: "",
     completedTime: "",
     serviceDate: "",
-    servicePerformed: workOrder.serviceType,
+    servicePerformed: normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
     scope: workOrder.description,
     notes: "",
     completedAt: "",
@@ -1039,6 +1059,10 @@ function SellControl({
 
   return (
     <div className="detail-stack">
+      <div className="pricing-reference-row">
+        <span className="detail-label">Current Cost</span>
+        <strong>{formatMoney(costValue)}</strong>
+      </div>
       <InputRow>
         <Field label="Current Cost">
           <input value={formatMoney(costValue)} readOnly disabled />
@@ -1075,18 +1099,24 @@ function CostControl({
     return (
       <div className="detail-card sell-lock-card">
         <div className="proposal-summary-grid">
-          <div>
+          <div className="editable-money-row">
             <span className="detail-label">Cost</span>
-            <p>{formatMoney(costValue)}</p>
+            <div className="money-inline">
+              <p>{formatMoney(costValue)}</p>
+              {!disabled ? (
+                <button
+                  type="button"
+                  className="icon-button inline-edit-button"
+                  onClick={onStartEdit}
+                  aria-label="Edit job cost"
+                  title="Edit cost"
+                >
+                  ✎
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
-        {!disabled ? (
-          <div className="form-actions">
-            <button className="secondary-button" onClick={onStartEdit} aria-label="Edit job cost">
-              Edit Cost
-            </button>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -1146,6 +1176,7 @@ function AppBuild03() {
   const [proposalSaveNotice, setProposalSaveNotice] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
   const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [profilePasswordError, setProfilePasswordError] = useState("");
   const [workOrdersLoading, setWorkOrdersLoading] = useState(false);
   const [workOrdersError, setWorkOrdersError] = useState("");
   const [workOrdersLoaded, setWorkOrdersLoaded] = useState(false);
@@ -1262,6 +1293,7 @@ function AppBuild03() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
     phone: "",
     jobTitle: "",
     companyName: "",
@@ -2436,9 +2468,10 @@ function AppBuild03() {
     const proposalRequired = workOrderForm.workflowType === "proposal";
     const workType = workOrderForm.workType || "one_time";
     const directVendorCost = String(workOrderForm.vendorCost || "").trim();
+    const serviceType = normalizeServiceType(workOrderForm.serviceType) || "General Maintenance";
     const record = {
       id: createId("wo"),
-      title: `${workOrderForm.serviceType || "General Maintenance"} - ${site.name}`,
+      title: `${serviceType} - ${site.name}`,
       amsWorkOrderNumber: nextWorkOrderNumber,
       externalWorkOrderNumber: workOrderForm.externalWorkOrderNumber.trim(),
       siteId: site.id,
@@ -2446,7 +2479,7 @@ function AppBuild03() {
       state: site.state || "",
       priority: "Normal",
       description: workOrderForm.description.trim(),
-      serviceType: workOrderForm.serviceType || "General Maintenance",
+      serviceType,
       status: directVendor ? "Assigned" : proposalRequired ? "Open" : "Needs Review",
       proposalRequired,
       proposalState: proposalRequired ? "opportunity" : "none",
@@ -2465,7 +2498,7 @@ function AppBuild03() {
         workType === "recurring" ? String(workOrderForm.recurringPricingNotes || "").trim() : "",
       seasonStart: workType === "seasonal" ? workOrderForm.seasonStart : "",
       seasonEnd: workType === "seasonal" ? workOrderForm.seasonEnd : "",
-      seasonalServiceType: workType === "seasonal" ? workOrderForm.seasonalServiceType : "",
+      seasonalServiceType: workType === "seasonal" ? normalizeServiceType(workOrderForm.seasonalServiceType) : "",
       createdAt,
       createdBy: currentUser?.email || currentUser?.name || "",
     };
@@ -2738,7 +2771,15 @@ function AppBuild03() {
       return;
     }
     const requestedPassword = profileForm.password.trim();
-    if (requestedPassword) {
+    const confirmedPassword = profileForm.confirmPassword.trim();
+    setProfilePasswordError("");
+    if (requestedPassword || confirmedPassword) {
+      if (requestedPassword !== confirmedPassword) {
+        const message = "New password and confirm password must match.";
+        setProfilePasswordError(message);
+        showActionNotice("error", message);
+        return;
+      }
       if (!currentUser.firebaseUid) {
         showActionNotice("error", "Password changes are only available for Firebase-authenticated users.");
         return;
@@ -2808,7 +2849,7 @@ function AppBuild03() {
         users: nextUsers,
       };
     });
-    setProfileForm((current) => ({ ...current, password: "" }));
+    setProfileForm((current) => ({ ...current, password: "", confirmPassword: "" }));
     showActionNotice("success", requestedPassword ? "Profile saved and Firebase password updated." : "Profile changes saved.");
   };
 
@@ -3485,6 +3526,7 @@ function AppBuild03() {
       return false;
     }
     const pricingUpdates = buildPricingFields({ sell: sellValue, currentUser, existingJob: targetJob });
+    const canonicalSellValue = pricingUpdates.sell;
 
     if (currentUser?.firebaseUid) {
       const result = await updateFirestoreJob(targetJob.firestoreId || targetJob.id, pricingUpdates);
@@ -3498,15 +3540,18 @@ function AppBuild03() {
       ...current,
       jobs: current.jobs.map((job) =>
         job.id === jobId
-          ? {
-              ...job,
-              ...pricingUpdates,
-            }
+          ? (() => {
+              const { sellPrice, ...jobWithoutLegacySellPrice } = job;
+              return {
+                ...jobWithoutLegacySellPrice,
+                ...pricingUpdates,
+              };
+            })()
           : job
       ),
     }));
     setSellSaveNotice({ type: "success", message: `Sell price saved for ${targetJob.siteName}.` });
-    setJobSellDrafts((current) => ({ ...current, [jobId]: sellValue }));
+    setJobSellDrafts((current) => ({ ...current, [jobId]: canonicalSellValue }));
     return true;
   };
 
@@ -3520,6 +3565,10 @@ function AppBuild03() {
       setSellSaveNotice({ type: "error", message: "Cost was not saved because the selected job was not found." });
       return false;
     }
+    const linkedInvoice = getInvoiceForJob(appState.invoices, targetJob.id);
+    const previousInvoiceCost = linkedInvoice?.amount ?? linkedInvoice?.total ?? "";
+    const invoiceCostChanged = Boolean(linkedInvoice) && didCostValueChange(previousInvoiceCost, costValue);
+    const editedBy = currentUser?.email || "";
 
     const costUpdates = {
       cost: costValue,
@@ -3529,9 +3578,23 @@ function AppBuild03() {
     };
 
     if (currentUser?.firebaseUid) {
-      const result = await updateFirestoreJob(targetJob.firestoreId || targetJob.id, costUpdates);
+      const result = linkedInvoice
+        ? await updateFirestoreJobAndInvoiceCost({
+            invoice: linkedInvoice,
+            invoiceId: linkedInvoice.firestoreId || linkedInvoice.id,
+            jobId: targetJob.firestoreId || targetJob.id,
+            jobUpdates: costUpdates,
+            newCost: costValue,
+            editedBy,
+          })
+        : await updateFirestoreJob(targetJob.firestoreId || targetJob.id, costUpdates);
       if (result.error) {
-        setSellSaveNotice({ type: "error", message: `Cost was not saved: ${getFirebaseErrorMessage(result.error)}` });
+        setSellSaveNotice({
+          type: "error",
+          message: linkedInvoice
+            ? `Cost sync failed: ${getFirebaseErrorMessage(result.error)}`
+            : `Cost was not saved: ${getFirebaseErrorMessage(result.error)}`,
+        });
         return false;
       }
     }
@@ -3546,8 +3609,39 @@ function AppBuild03() {
             }
           : job
       ),
+      invoices: linkedInvoice
+        ? current.invoices.map((invoice) =>
+            invoice.id === linkedInvoice.id
+              ? {
+                  ...invoice,
+                  amount: costValue,
+                  total: costValue,
+                  ...(invoiceCostChanged
+                    ? {
+                        lastCostUpdatedBy: editedBy,
+                        lastCostUpdatedAt: new Date().toISOString(),
+                        adjustments: [
+                          ...(invoice.adjustments || []),
+                          {
+                            previousCost: previousInvoiceCost,
+                            newCost: costValue,
+                            editedBy,
+                            editedAt: new Date().toISOString(),
+                          },
+                        ],
+                      }
+                    : {}),
+                }
+              : invoice
+          )
+        : current.invoices,
     }));
-    setSellSaveNotice({ type: "success", message: `Cost saved for ${targetJob.siteName}.` });
+    setSellSaveNotice({
+      type: "success",
+      message: linkedInvoice
+        ? `Cost saved for ${targetJob.siteName} and synced to invoice.`
+        : `Cost saved for ${targetJob.siteName}.`,
+    });
     return true;
   };
 
@@ -4128,6 +4222,7 @@ function AppBuild03() {
       name: currentUser.name || "",
       email: currentUser.email || "",
       password: "",
+      confirmPassword: "",
       phone: currentUser.phone || "",
       jobTitle: currentUser.jobTitle || "",
       companyName: currentUser.companyName || "",
@@ -4138,6 +4233,7 @@ function AppBuild03() {
       internalNotes: currentUser.internalNotes || "",
       profilePhotoStatus: currentUser.profilePhotoStatus || "Photo Upload Coming Soon",
     });
+    setProfilePasswordError("");
   }, [currentUser]);
 
   useEffect(() => {
@@ -4953,7 +5049,8 @@ function AppBuild03() {
         <div className="detail-stack">
           <div className="profile-summary"><div><strong>{currentUser.name}</strong><p>{currentUser.email}</p></div><div className="status-pill active">{getDisplayRole(currentUser)}</div></div>
           <article className="detail-card profile-photo-card"><span className="detail-label">Profile Photo</span><strong>Future Profile Picture</strong><p>{profileForm.profilePhotoStatus}</p><button className="secondary-button" onClick={() => showPlaceholder("Profile photo upload will be added in a later build.")}>Photo Upload Coming Soon</button></article>
-        <InputRow><Field label={isCrewUser(currentUser) ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="New Password"><div className="password-field-wrap"><input type={showProfilePassword ? "text" : "password"} value={profileForm.password} placeholder="Firebase Auth only; leave blank to keep current password" onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))} /><button type="button" className="password-toggle" onClick={() => setShowProfilePassword((current) => !current)} aria-label={showProfilePassword ? "Hide password" : "Show password"}>{showProfilePassword ? "Hide" : "Show"}</button></div></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
+        <InputRow><Field label={isCrewUser(currentUser) ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="New Password"><div className="password-field-wrap"><input type={showProfilePassword ? "text" : "password"} value={profileForm.password} placeholder="Firebase Auth only; leave blank to keep current password" onChange={(event) => { setProfilePasswordError(""); setProfileForm((current) => ({ ...current, password: event.target.value })); }} /><button type="button" className="password-toggle" onClick={() => setShowProfilePassword((current) => !current)} aria-label={showProfilePassword ? "Hide password" : "Show password"}>{showProfilePassword ? "Hide" : "Show"}</button></div></Field><Field label="Confirm Password"><div className="password-field-wrap"><input type={showProfilePassword ? "text" : "password"} value={profileForm.confirmPassword} placeholder="Re-enter new password" onChange={(event) => { setProfilePasswordError(""); setProfileForm((current) => ({ ...current, confirmPassword: event.target.value })); }} /><button type="button" className="password-toggle" onClick={() => setShowProfilePassword((current) => !current)} aria-label={showProfilePassword ? "Hide password" : "Show password"}>{showProfilePassword ? "Hide" : "Show"}</button></div></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
+          {profilePasswordError ? <div className="inline-notice error">{profilePasswordError}</div> : null}
           <div className="form-actions"><button className="primary-button" onClick={saveProfile}>Save Profile</button></div>
         </div>
       </PageSection>

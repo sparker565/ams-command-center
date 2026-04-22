@@ -1,4 +1,15 @@
-import { addDoc, collection, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
+import {
+  addDoc,
+  arrayUnion,
+  collection,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toIsoString(value) {
@@ -50,6 +61,9 @@ function normalizeInvoiceData(id, data = {}) {
     completedAt: toIsoString(data.completedAt),
     lineItems: data.lineItems || [],
     vendorCompany: data.vendorCompany || {},
+    lastCostUpdatedAt: toIsoString(data.lastCostUpdatedAt),
+    lastCostUpdatedBy: data.lastCostUpdatedBy || "",
+    adjustments: data.adjustments || [],
   };
 }
 
@@ -84,7 +98,21 @@ function serializeInvoice(invoice) {
     completedAt: invoice.completedAt || "",
     lineItems: invoice.lineItems || [],
     vendorCompany: invoice.vendorCompany || {},
+    lastCostUpdatedAt: invoice.lastCostUpdatedAt || "",
+    lastCostUpdatedBy: invoice.lastCostUpdatedBy || "",
+    adjustments: invoice.adjustments || [],
   };
+}
+
+function normalizeCostForCompare(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numeric = Number(trimmed);
+  return Number.isNaN(numeric) ? trimmed : String(numeric);
+}
+
+function didCostChange(previousCost, newCost) {
+  return normalizeCostForCompare(previousCost) !== normalizeCostForCompare(newCost);
 }
 
 export async function getFirestoreInvoiceByJobId(jobId) {
@@ -170,6 +198,46 @@ export async function updateFirestoreInvoiceAndJob(invoiceId, invoiceUpdates, jo
     return { error: null };
   } catch (error) {
     return { error };
+  }
+}
+
+export async function updateFirestoreJobAndInvoiceCost({
+  invoice,
+  invoiceId,
+  jobId,
+  jobUpdates,
+  newCost,
+  editedBy,
+}) {
+  try {
+    if (!jobId) throw new Error("Cannot update job cost without a job ID.");
+    if (!invoiceId) throw new Error("Cannot sync invoice cost without an invoice ID.");
+
+    const previousCost = invoice?.amount ?? invoice?.total ?? "";
+    const changed = didCostChange(previousCost, newCost);
+    const invoiceUpdates = {
+      amount: newCost,
+      total: newCost,
+    };
+
+    if (changed) {
+      invoiceUpdates.lastCostUpdatedBy = editedBy || "";
+      invoiceUpdates.lastCostUpdatedAt = serverTimestamp();
+      invoiceUpdates.adjustments = arrayUnion({
+        previousCost,
+        newCost,
+        editedBy: editedBy || "",
+        editedAt: new Date().toISOString(),
+      });
+    }
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, "jobs", jobId), jobUpdates);
+    batch.update(doc(db, "invoices", invoiceId), invoiceUpdates);
+    await batch.commit();
+    return { changed, error: null };
+  } catch (error) {
+    return { changed: false, error };
   }
 }
 

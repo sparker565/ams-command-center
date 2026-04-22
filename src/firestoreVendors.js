@@ -1,12 +1,13 @@
 import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
+import { normalizeServiceType } from "./constants";
 import { db } from "./lib/firebase";
 
 function toArray(value) {
-  if (Array.isArray(value)) return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  if (Array.isArray(value)) return value.map(normalizeServiceType).filter(Boolean);
   if (!value) return [];
   return String(value)
     .split(",")
-    .map((entry) => entry.trim())
+    .map(normalizeServiceType)
     .filter(Boolean);
 }
 
@@ -35,7 +36,7 @@ export function normalizeFirestoreVendor(docSnapshot) {
     phone: data.phone || "",
     state: states[0] || "",
     states,
-    serviceType: data.serviceType || serviceTypes[0] || "",
+    serviceType: normalizeServiceType(data.serviceType || serviceTypes[0]) || "",
     serviceTypes,
     status: data.status || "active",
     active: normalizeVendorStatus(data.status),
@@ -79,7 +80,7 @@ function serializeVendor(vendor) {
     phone: vendor.phone || "",
     state,
     states: states.length ? states : state ? [state] : [],
-    serviceType: vendor.serviceType || serviceTypes[0] || "",
+    serviceType: normalizeServiceType(vendor.serviceType || serviceTypes[0]) || "",
     serviceTypes,
     status: vendor.status || (vendor.active === false ? "inactive" : "active"),
     notes: vendor.internalNotes || vendor.notes || "",

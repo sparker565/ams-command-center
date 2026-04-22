@@ -8,6 +8,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import { normalizeServiceType } from "./constants";
 import { createOrLinkFirestoreJobForWorkOrder } from "./firestoreJobs";
 import { db } from "./lib/firebase";
 
@@ -54,7 +55,7 @@ function normalizeProposalData(id, data = {}) {
     vendorName,
     vendorCompanyName: vendorName,
     vendorUserEmail: data.vendorUserEmail || "",
-    serviceType: data.serviceType || "",
+    serviceType: normalizeServiceType(data.serviceType) || "",
     price: submittedPrice,
     submittedPrice,
     notes: submittedNotes,
@@ -105,7 +106,7 @@ function serializeProposalCreate(proposal) {
     vendorId: proposal.vendorId || "",
     vendorName: proposal.vendorName || proposal.vendorCompanyName || "",
     vendorUserEmail: proposal.vendorUserEmail || "",
-    serviceType: proposal.serviceType || "",
+    serviceType: normalizeServiceType(proposal.serviceType) || "",
     price: proposal.price ?? proposal.submittedPrice ?? "",
     notes: proposal.notes ?? proposal.submittedNotes ?? "",
     status: toFirestoreProposalStatus(proposal.status),
@@ -152,7 +153,7 @@ export async function approveFirestoreProposalForWorkOrder({ proposal, workOrder
         id: workOrder.id || proposalWorkOrderId,
         siteId: proposal.siteId || workOrder.siteId || "",
         siteName: proposal.siteName || workOrder.siteName || "",
-        serviceType: proposal.serviceType || workOrder.serviceType || "",
+        serviceType: normalizeServiceType(proposal.serviceType || workOrder.serviceType) || "",
         proposalAwardedAt: approvedAt,
       },
       vendor: {

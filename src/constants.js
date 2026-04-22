@@ -30,7 +30,29 @@ export const JOB_FILTERS = ["All", "Pending", "In Progress", "Completed", "Invoi
 export const PROPOSAL_STATUS = ["submitted", "revision_requested", "rejected", "approved"];
 export const PROPOSAL_STATE = ["none", "opportunity", "under_review", "awarded", "closed"];
 
-export const SERVICE_TYPES = ["Snow", "Pre-Landscaping", "Lot Sweeping"];
+export const SERVICE_TYPES = [
+  "Snow",
+  "Ice / Deicing",
+  "Landscaping",
+  "Lot Sweeping",
+  "Power Washing",
+  "Window Washing",
+  "Line Striping",
+  "Sealcoating",
+  "Parking Lot Repair",
+  "Lighting Repair",
+  "Exterior Electrical",
+  "Roof Maintenance",
+  "Hauling",
+  "General Maintenance",
+  "Other",
+];
+
+export function normalizeServiceType(value) {
+  const normalized = String(value || "").trim();
+  if (normalized.toLowerCase() === "pre-landscaping") return "Landscaping";
+  return normalized;
+}
 
 export const AMS_ROLES = [ROLES.AMS_ADMIN, ROLES.AMS_MANAGER];
 export const CREW_ROLES = [ROLES.CREW, ROLES.VENDOR];

@@ -1,4 +1,5 @@
 import { addDoc, collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import { normalizeServiceType } from "./constants";
 import { db } from "./lib/firebase";
 
 function toIsoString(value) {
@@ -34,7 +35,7 @@ export function normalizeFirestoreWorkOrder(docSnapshot) {
     description: data.description || title,
     createdAt,
     createdBy: data.createdBy || "",
-    serviceType: data.serviceType || "Snow",
+    serviceType: normalizeServiceType(data.serviceType) || "Snow",
     triggerDepth: data.triggerDepth ?? "",
     vendorCost: data.vendorCost ?? "",
     assignedVendorId: data.assignedVendorId || "",
@@ -52,7 +53,7 @@ export function normalizeFirestoreWorkOrder(docSnapshot) {
     recurringPricingNotes: data.recurringPricingNotes || "",
     seasonStart: toIsoString(data.seasonStart),
     seasonEnd: toIsoString(data.seasonEnd),
-    seasonalServiceType: data.seasonalServiceType || "",
+    seasonalServiceType: normalizeServiceType(data.seasonalServiceType) || "",
   };
 }
 
@@ -68,7 +69,7 @@ function serializeWorkOrderCreate(workOrder) {
     description: workOrder.description || title,
     createdAt: workOrder.createdAt || new Date().toISOString(),
     createdBy: workOrder.createdBy || "",
-    serviceType: workOrder.serviceType || "General Maintenance",
+    serviceType: normalizeServiceType(workOrder.serviceType) || "General Maintenance",
     triggerDepth: workOrder.triggerDepth ?? "",
     assignedVendorId: workOrder.assignedVendorId || "",
     assignedVendorName: workOrder.assignedVendorName || "",
@@ -87,7 +88,7 @@ function serializeWorkOrderCreate(workOrder) {
     recurringPricingNotes: workOrder.recurringPricingNotes || "",
     seasonStart: workOrder.seasonStart || "",
     seasonEnd: workOrder.seasonEnd || "",
-    seasonalServiceType: workOrder.seasonalServiceType || "",
+    seasonalServiceType: normalizeServiceType(workOrder.seasonalServiceType) || "",
   };
 }
 
