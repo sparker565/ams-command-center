@@ -342,13 +342,15 @@ export function Field({ label, children }) {
   );
 }
 
-export function TopActionBar({ actions }) {
+export function TopActionBar({ actions, activeKey }) {
   return (
     <div className="top-action-bar">
       {actions.map((action) => (
         <button
           key={action.key}
-          className={action.featured ? "primary-button" : "secondary-button"}
+          className={`${action.featured ? "primary-button" : "secondary-button"} ${
+            activeKey === action.key ? "active" : ""
+          }`}
           onClick={action.onClick}
         >
           {action.label}

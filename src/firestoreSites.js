@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toIsoString(value) {
@@ -102,6 +102,16 @@ export async function updateFirestoreSite(siteId, updates) {
     return { site: normalizeFirestoreSite({ id: siteId, data: () => serializeSiteCreate(updates) }), error: null };
   } catch (error) {
     return { site: null, error };
+  }
+}
+
+export async function deleteFirestoreSite(siteId) {
+  try {
+    if (!siteId) throw new Error("Cannot delete a site without a site ID.");
+    await deleteDoc(doc(db, "sites", siteId));
+    return { error: null };
+  } catch (error) {
+    return { error };
   }
 }
 

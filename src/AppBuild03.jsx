@@ -46,8 +46,8 @@ import {
   normalizeProposalStatus,
   updateFirestoreProposal,
 } from "./firestoreProposals";
-import { createFirestoreSite, loadFirestoreSites, updateFirestoreSite } from "./firestoreSites";
-import { createFirestoreVendor, loadFirestoreVendors, updateFirestoreVendor } from "./firestoreVendors";
+import { createFirestoreSite, deleteFirestoreSite, loadFirestoreSites, updateFirestoreSite } from "./firestoreSites";
+import { createFirestoreVendor, deleteFirestoreVendor, loadFirestoreVendors, updateFirestoreVendor } from "./firestoreVendors";
 import { createFirestoreWorkOrder, loadFirestoreWorkOrders, updateFirestoreWorkOrder } from "./firestoreWorkOrders";
 
 function createId(prefix) {
@@ -260,7 +260,7 @@ function normalizeProposal(proposal) {
 }
 
 function normalizeJob(job) {
-  const normalizedSell = String(job.sellPrice ?? job.sell ?? "").trim();
+  const normalizedSell = String(job.sell ?? job.sellPrice ?? "").trim();
   const startedAt = job.startedAt || job.startTime || "";
   const startTime = job.startTime || startedAt;
   const completedTime = job.completedTime || job.completedAt || "";
@@ -593,7 +593,7 @@ function canCrewSubmitProposal({ workOrder, site, vendor, proposals, jobs }) {
 }
 
 function getJobSellValue(job) {
-  return String(job?.sellPrice ?? job?.sell ?? "").trim();
+  return String(job?.sell ?? job?.sellPrice ?? "").trim();
 }
 
 function getPricingStatus(job) {
@@ -617,8 +617,7 @@ function buildPricingFields({ sell, currentUser, existingJob }) {
   const timestamp = new Date().toISOString();
 
   return {
-    sell: hasSell ? normalizedSell : null,
-    sellPrice: normalizedSell,
+    sell: hasSell ? normalizedSell : "",
     pricingStatus: hasSell ? "set" : "not_set",
     sellSetBy: hasSell ? currentUser?.id || existingJob?.sellSetBy || null : null,
     sellSetAt: hasSell
@@ -1826,20 +1825,25 @@ function AppBuild03() {
     setActiveModal("site");
   };
 
-  const removeSite = (siteId) => {
-    const relatedWorkOrderIds = appState.workOrders
-      .filter((workOrder) => workOrder.siteId === siteId)
-      .map((workOrder) => workOrder.id);
+  const removeSite = async (siteId) => {
+    const targetSite = appState.sites.find((site) => site.id === siteId);
+    if (!targetSite) return;
+    const confirmed = window.confirm(
+      `Remove ${targetSite.name || "this site"}? Existing work orders and jobs will remain in Firestore history.`
+    );
+    if (!confirmed) return;
+
+    if (currentUser?.firebaseUid) {
+      const result = await deleteFirestoreSite(targetSite.firestoreId || targetSite.id);
+      if (result.error) {
+        showActionNotice("error", `Site was not removed: ${getFirebaseErrorMessage(result.error)}`);
+        return;
+      }
+    }
 
     updateAppState((current) => ({
       ...current,
       sites: current.sites.filter((site) => site.id !== siteId),
-      workOrders: current.workOrders.filter((workOrder) => workOrder.siteId !== siteId),
-      jobs: current.jobs.filter((job) => job.siteId !== siteId),
-      proposals: current.proposals.filter(
-        (proposal) => !relatedWorkOrderIds.includes(proposal.workOrderId)
-      ),
-      invoices: current.invoices.filter((invoice) => invoice.siteId !== siteId),
       ui: {
         ...current.ui,
         selectedSiteId:
@@ -1848,6 +1852,7 @@ function AppBuild03() {
             : current.ui.selectedSiteId,
       },
     }));
+    showActionNotice("success", `${targetSite.name || "Site"} removed.`);
   };
 
   const saveVendor = async () => {
@@ -2032,6 +2037,39 @@ function AppBuild03() {
         vendor.id === vendorId ? { ...vendor, active: !vendor.active } : vendor
       ),
     }));
+  };
+
+  const removeVendor = async (vendorId) => {
+    const targetVendor = normalizedVendors.find((vendor) => vendor.id === vendorId);
+    if (!targetVendor) return;
+    const relatedJobs = appState.jobs.filter((job) => job.vendorId === vendorId || job.assignedVendorId === vendorId);
+    const confirmed = window.confirm(
+      `Remove ${targetVendor.companyName || targetVendor.name || "this vendor"}? ${relatedJobs.length ? "Existing job history will remain linked by vendor ID." : "This removes the vendor record."}`
+    );
+    if (!confirmed) return;
+
+    if (currentUser?.firebaseUid) {
+      const result = await deleteFirestoreVendor(targetVendor.firestoreId || targetVendor.id);
+      if (result.error) {
+        showActionNotice("error", `Vendor was not removed: ${getFirebaseErrorMessage(result.error)}`);
+        return;
+      }
+    }
+
+    updateAppState((current) => {
+      const nextCompanyProfiles = { ...(current.companyProfiles?.vendors || {}) };
+      delete nextCompanyProfiles[vendorId];
+      return {
+        ...current,
+        vendors: current.vendors.filter((vendor) => vendor.id !== vendorId),
+        companyProfiles: {
+          ...(current.companyProfiles || {}),
+          vendors: nextCompanyProfiles,
+        },
+      };
+    });
+    setSelectedCrewId((current) => (current === vendorId ? null : current));
+    showActionNotice("success", `${targetVendor.companyName || targetVendor.name || "Vendor"} removed.`);
   };
 
   const saveUser = () => {
@@ -3838,14 +3876,29 @@ function AppBuild03() {
     });
   }, [currentCompanyProfile]);
 
-  const topActions = [
+  const amsQuickActions = [
+    { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
     { key: "createWorkOrder", label: "Create Work Order", onClick: () => openModal("workOrder"), featured: true },
     { key: "workOrders", label: "Work Orders", onClick: () => openScreen("workOrders") },
     { key: "jobs", label: "Jobs", onClick: () => openScreen("jobs") },
     { key: "sites", label: "Sites", onClick: () => openScreen("sites") },
     { key: "vendors", label: SCREEN_LABELS.vendors, onClick: () => openScreen("vendors") },
     { key: "proposals", label: "Proposals", onClick: () => openScreen("proposals") },
+    { key: "accounting", label: "Accounting", onClick: () => openScreen("accounting") },
   ];
+  const crewQuickActions = [
+    { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
+    { key: "availableWork", label: "Available Work", onClick: () => openScreen("availableWork") },
+    { key: "myJobs", label: "My Jobs", onClick: () => openScreen("myJobs") },
+    { key: "mySites", label: "My Sites", onClick: () => openScreen("mySites") },
+    { key: "myProposals", label: "My Proposals", onClick: () => openScreen("myProposals") },
+    { key: "myInvoices", label: "My Invoices", onClick: () => openScreen("myInvoices") },
+  ];
+  const quickActions = isCrewUser(currentUser)
+    ? crewQuickActions
+    : AMS_ROLES.includes(currentUser?.role)
+    ? amsQuickActions
+    : [];
   const weatherSummary = weatherSummaryConfig.map((item) => ({
     ...item,
     value: weatherCommandState.filter((site) => site.status === item.key).length,
@@ -3933,7 +3986,6 @@ function AppBuild03() {
 
   const amsDashboard = (
     <div className="screen-grid">
-      <TopActionBar actions={topActions} />
       <div className="ams-dashboard-grid">
         <PageSection title="Operations Snapshot">
           <StatGrid items={[
@@ -4329,7 +4381,7 @@ function AppBuild03() {
       <PageSection title="Vendors" action={<button className="primary-button" onClick={() => openModal("vendor")}>Add Vendor</button>}>
         <SplitView
           list={<div className="list-stack"><SearchBar value={crewSearch} onChange={setCrewSearch} placeholder="Search vendors" /><div className="list-scroll"><DataTable columns={[{ key: "company", label: "Vendor Company", render: (row) => row.companyName || row.name }, { key: "contact", label: "Vendor Contact", render: (row) => row.contactName || "Not set" }, { key: "serviceType", label: "Primary Service", render: (row) => row.serviceType }, { key: "states", label: "States", render: (row) => row.states.join(", ") }, { key: "status", label: "Status", render: (row) => (row.active ? "Active" : "Inactive") }]} rows={filteredCrews} selectedRowId={selectedCrew?.id} onRowClick={(row) => setSelectedCrewId(row.id)} emptyTitle="No vendors" emptyText="Add a vendor before assigning jobs." /></div></div>}
-          detail={selectedCrew ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrew.companyName || selectedCrew.name}</strong><p>{selectedCrew.serviceType}</p></div><StatusBadge value={selectedCrew.active ? "active" : "inactive"} label={selectedCrew.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Vendor Company</span><p>{selectedCrew.companyName || "Not set"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedCrew.contactName || "Not set"}</p></div><div><span className="detail-label">Phone</span><p>{selectedCrew.phone ? <a href={`tel:${selectedCrew.phone}`}>{selectedCrew.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Email</span><p>{selectedCrew.email || "Not set"}</p></div><div><span className="detail-label">Address</span><p>{selectedCrew.address || "Not set"}</p></div><div><span className="detail-label">Service Types</span><p>{selectedCrew.serviceTypes.join(", ")}</p></div><div><span className="detail-label">Coverage</span><p>{selectedCrew.states.join(", ") || "Not set"}</p></div><div><span className="detail-label">Linked Login</span><p>{selectedCrew.email || "Not linked"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedCrew.internalNotes || "No internal notes"}</p></div></div><div className="form-actions"><button className="secondary-button" onClick={() => startEditVendor(selectedCrew)}>Edit Vendor</button><button className="secondary-button" onClick={() => toggleVendorActive(selectedCrew.id)}>{selectedCrew.active ? "Deactivate" : "Activate"}</button></div></div> : <EmptyState title="No vendor selected" text="Select a vendor to view details." />}
+          detail={selectedCrew ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrew.companyName || selectedCrew.name}</strong><p>{selectedCrew.serviceType}</p></div><StatusBadge value={selectedCrew.active ? "active" : "inactive"} label={selectedCrew.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Vendor Company</span><p>{selectedCrew.companyName || "Not set"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedCrew.contactName || "Not set"}</p></div><div><span className="detail-label">Phone</span><p>{selectedCrew.phone ? <a href={`tel:${selectedCrew.phone}`}>{selectedCrew.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Email</span><p>{selectedCrew.email || "Not set"}</p></div><div><span className="detail-label">Address</span><p>{selectedCrew.address || "Not set"}</p></div><div><span className="detail-label">Service Types</span><p>{selectedCrew.serviceTypes.join(", ")}</p></div><div><span className="detail-label">Coverage</span><p>{selectedCrew.states.join(", ") || "Not set"}</p></div><div><span className="detail-label">Linked Login</span><p>{selectedCrew.email || "Not linked"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedCrew.internalNotes || "No internal notes"}</p></div></div><div className="form-actions"><button className="secondary-button" onClick={() => startEditVendor(selectedCrew)}>Edit Vendor</button><button className="secondary-button" onClick={() => toggleVendorActive(selectedCrew.id)}>{selectedCrew.active ? "Deactivate" : "Activate"}</button><button className="secondary-button danger-button" onClick={() => removeVendor(selectedCrew.id)}>Remove Vendor</button></div></div> : <EmptyState title="No vendor selected" text="Select a vendor to view details." />}
         />
       </PageSection>
     </div>
@@ -4675,7 +4727,7 @@ function AppBuild03() {
       <Drawer open={drawerOpen} menuItems={DRAWER_MENUS[currentUser.role]} activeScreen={activeScreen} labels={SCREEN_LABELS} currentUser={currentUser} onNavigate={openScreen} onLogout={logout} onClose={() => setDrawerOpen(false)} />
       <div className="main-shell">
         <Header currentUser={currentUser} activeScreen={activeScreen} onOpenDrawer={() => setDrawerOpen(true)} onGoBack={() => openScreen("dashboard")} onOpenNotifications={() => showPlaceholder("Notifications will be added in a later build.")} onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)} profileMenuOpen={profileMenuOpen} onNavigate={openScreen} onLogout={logout} />
-        <main className="content-shell"><div className="screen-header"><div><div className="eyebrow">{getPortalEyebrow(currentUser)}</div><h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1></div></div>{actionNotice ? <div className={`inline-notice ${actionNotice.type}`}>{actionNotice.message}</div> : null}{renderScreen()}</main>
+        <main className="content-shell"><div className="screen-header"><div><div className="eyebrow">{getPortalEyebrow(currentUser)}</div><h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1></div></div>{actionNotice ? <div className={`inline-notice ${actionNotice.type}`}>{actionNotice.message}</div> : null}{quickActions.length ? <TopActionBar actions={quickActions} activeKey={activeScreen} /> : null}{renderScreen()}</main>
       </div>
 
       <Modal

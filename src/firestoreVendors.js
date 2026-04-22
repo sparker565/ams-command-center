@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toArray(value) {
@@ -114,6 +114,16 @@ export async function updateFirestoreVendor(vendorId, updates) {
     };
   } catch (error) {
     return { vendor: null, error };
+  }
+}
+
+export async function deleteFirestoreVendor(vendorId) {
+  try {
+    if (!vendorId) throw new Error("Cannot delete a vendor without a vendor ID.");
+    await deleteDoc(doc(db, "vendors", vendorId));
+    return { error: null };
+  } catch (error) {
+    return { error };
   }
 }
 

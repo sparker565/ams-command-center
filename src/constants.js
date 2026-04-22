@@ -76,8 +76,8 @@ export const DRAWER_MENUS = {
     "reports",
     "settings",
   ],
-  [ROLES.CREW]: ["dashboard", "myJobs", "completedJobs", "myInvoices", "profile"],
-  [ROLES.VENDOR]: ["dashboard", "myJobs", "completedJobs", "myInvoices", "profile"],
+  [ROLES.CREW]: ["dashboard", "availableWork", "myJobs", "mySites", "myProposals", "completedJobs", "myInvoices", "profile"],
+  [ROLES.VENDOR]: ["dashboard", "availableWork", "myJobs", "mySites", "myProposals", "completedJobs", "myInvoices", "profile"],
   [ROLES.OPERATOR]: ["dashboard", "settings"],
   [ROLES.CUSTOMER]: ["dashboard", "settings"],
 };
