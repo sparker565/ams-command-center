@@ -38,6 +38,13 @@ import {
   UnderConstruction,
 } from "./components";
 import { getFirebaseErrorMessage, loadFirestoreUserByEmail, signIn, signOutUser, subscribeToAuthState, updateCurrentUserPassword } from "./firebaseAuth";
+import {
+  createFirestoreInvoiceAndMarkJob,
+  loadFirestoreInvoices,
+  normalizeInvoiceStatus,
+  updateFirestoreInvoiceAndJob,
+  updateFirestoreInvoice,
+} from "./firestoreInvoices";
 import { createOrLinkFirestoreJobForWorkOrder, loadFirestoreJobs, updateFirestoreJob } from "./firestoreJobs";
 import {
   approveFirestoreProposalForWorkOrder,
@@ -304,7 +311,7 @@ function normalizeInvoice(invoice) {
     terms: invoice.terms || "Net 30",
     submittedAt: invoice.submittedAt || "",
     submittedBy: invoice.submittedBy || "",
-    status: invoice.status || "Invoice Submitted",
+    status: normalizeInvoiceStatus(invoice.status),
     notes: invoice.notes || "",
     completedAt: invoice.completedAt || "",
     vendorCompany: {
@@ -691,7 +698,9 @@ function buildInvoiceRecord({ job, workOrder, currentUser }) {
     terms: "Net 30",
     submittedAt: new Date().toISOString(),
     submittedBy: currentUser?.name || "",
-    status: "Invoice Submitted",
+    vendorUserEmail: job.vendorUserEmail || currentUser?.email || "",
+    state: job.state || workOrder?.state || "",
+    status: "Submitted",
     notes: "",
     completedAt: job.completedAt || workOrder?.proposalAwardedAt || "",
     vendorCompany: {
@@ -821,7 +830,7 @@ function getSiteNeedsActionCount({ site, workOrders = [], jobs = [], invoices = 
     ["Needs Review", "Needs Attention", "Needs Vendor", "Open"].includes(workOrder.status)
   ).length;
   const invoiceActions = invoices.filter((invoice) =>
-    siteJobIds.has(invoice.jobId) && ["Invoice Submitted", "Under Review", "Rejected"].includes(invoice.status)
+    siteJobIds.has(invoice.jobId) && ["Submitted", "Rejected"].includes(normalizeInvoiceStatus(invoice.status))
   ).length;
 
   return proposalActions + workOrderActions + invoiceActions;
@@ -1089,6 +1098,9 @@ function AppBuild03() {
   const [proposalsLoading, setProposalsLoading] = useState(false);
   const [proposalsError, setProposalsError] = useState("");
   const [proposalsLoaded, setProposalsLoaded] = useState(false);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesError, setInvoicesError] = useState("");
+  const [invoicesLoaded, setInvoicesLoaded] = useState(false);
   const [workOrderDetailForm, setWorkOrderDetailForm] = useState({
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
@@ -1104,7 +1116,7 @@ function AppBuild03() {
     dueDate: "",
     terms: "Net 30",
     notes: "",
-    status: "Invoice Submitted",
+    status: "Submitted",
     lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
   });
   const [jobSellDrafts, setJobSellDrafts] = useState({});
@@ -1455,6 +1467,46 @@ function AppBuild03() {
       updateAppState((current) => ({
         ...current,
         proposals,
+      }));
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, [authRestoring, currentUser?.firebaseUid]);
+
+  useEffect(() => {
+    if (authRestoring) return;
+    if (!currentUser) {
+      setInvoicesLoaded(false);
+      return;
+    }
+    if (!currentUser.firebaseUid) {
+      setInvoicesLoading(false);
+      setInvoicesError("");
+      setInvoicesLoaded(true);
+      return;
+    }
+
+    let canceled = false;
+    setInvoicesLoading(true);
+    setInvoicesError("");
+    setInvoicesLoaded(false);
+
+    loadFirestoreInvoices().then(({ invoices, error }) => {
+      if (canceled) return;
+      setInvoicesLoading(false);
+      setInvoicesLoaded(true);
+
+      if (error) {
+        setInvoicesError(getFirebaseErrorMessage(error));
+        return;
+      }
+
+      setInvoicesError("");
+      updateAppState((current) => ({
+        ...current,
+        invoices,
       }));
     });
 
@@ -3227,17 +3279,30 @@ function AppBuild03() {
         buildInvoiceRecord({ job, workOrder, currentUser }).lineItems
       ),
     };
+    let invoiceToStore = invoice;
     const jobUpdates = { status: "Invoiced" };
     if (currentUser?.firebaseUid) {
-      const result = await updateFirestoreJob(job.firestoreId || job.id, jobUpdates);
-      if (result.error) {
-        showActionNotice("error", `Invoice was not submitted because job status was not saved: ${getFirebaseErrorMessage(result.error)}`);
+      const invoiceResult = await createFirestoreInvoiceAndMarkJob({
+        invoice,
+        jobId: job.firestoreId || job.id,
+      });
+      if (invoiceResult.error) {
+        showActionNotice("error", `Invoice was not submitted: ${getFirebaseErrorMessage(invoiceResult.error)}`);
         return;
       }
+      if (invoiceResult.alreadyExists) {
+        showActionNotice("error", "An invoice already exists for this job.");
+        return;
+      }
+      if (!invoiceResult.invoice?.id) {
+        showActionNotice("error", "Invoice was not submitted because Firestore did not return an invoice ID.");
+        return;
+      }
+      invoiceToStore = invoiceResult.invoice;
     }
     updateAppState((current) => ({
       ...current,
-      invoices: [invoice, ...current.invoices],
+      invoices: [invoiceToStore, ...current.invoices.filter((entry) => entry.jobId !== job.id)],
       jobs: current.jobs.map((entry) =>
         entry.id === job.id
           ? {
@@ -3247,7 +3312,7 @@ function AppBuild03() {
           : entry
       ),
     }));
-    setSelectedInvoiceId(invoice.id);
+    setSelectedInvoiceId(invoiceToStore.id);
     showActionNotice("success", "Invoice submitted. Job moved to Invoiced.");
     openScreen("myInvoices");
   };
@@ -3341,7 +3406,7 @@ function AppBuild03() {
     if (saved) setEditingAccountingSellJobId(null);
   };
 
-  const saveInvoice = () => {
+  const saveInvoice = async () => {
     const targetInvoiceId = selectedInvoice?.id;
     if (!targetInvoiceId) {
       showActionNotice("error", "Select an invoice before saving.");
@@ -3353,15 +3418,26 @@ function AppBuild03() {
       return;
     }
     const total = calculateInvoiceTotal(invoiceForm.lineItems);
+    const invoiceUpdates = {
+      ...invoiceForm,
+      status: normalizeInvoiceStatus(invoiceForm.status),
+      amount: total,
+      total,
+    };
+    if (currentUser?.firebaseUid) {
+      const result = await updateFirestoreInvoice(selectedInvoice.firestoreId || selectedInvoice.id, invoiceUpdates);
+      if (result.error) {
+        showActionNotice("error", `Invoice was not saved: ${getFirebaseErrorMessage(result.error)}`);
+        return;
+      }
+    }
     updateAppState((current) => ({
       ...current,
       invoices: current.invoices.map((invoice) =>
         invoice.id === targetInvoiceId
           ? {
               ...invoice,
-              ...invoiceForm,
-              amount: total,
-              total,
+              ...invoiceUpdates,
             }
           : invoice
       ),
@@ -3380,12 +3456,35 @@ function AppBuild03() {
       return;
     }
     const timestamp = new Date().toISOString();
-    const shouldCloseJob = status === "Paid" && selectedInvoiceJob;
-    if (shouldCloseJob && currentUser?.firebaseUid) {
-      const result = await updateFirestoreJob(selectedInvoiceJob.firestoreId || selectedInvoiceJob.id, { status: "Closed" });
-      if (result.error) {
-        showActionNotice("error", `Invoice status was not updated because job close failed: ${getFirebaseErrorMessage(result.error)}`);
-        return;
+    const normalizedStatus = normalizeInvoiceStatus(status);
+    const shouldCloseJob = normalizedStatus === "Paid" && selectedInvoiceJob;
+    const invoiceUpdates = {
+      ...invoiceForm,
+      status: normalizedStatus,
+      amount: calculateInvoiceTotal(invoiceForm.lineItems),
+      total: calculateInvoiceTotal(invoiceForm.lineItems),
+      approvedAt: normalizedStatus === "Approved" ? selectedInvoice.approvedAt || timestamp : selectedInvoice.approvedAt || "",
+      approvedBy: normalizedStatus === "Approved" ? currentUser?.email || currentUser?.name || "" : selectedInvoice.approvedBy || "",
+      paidAt: normalizedStatus === "Paid" ? selectedInvoice.paidAt || timestamp : selectedInvoice.paidAt || "",
+    };
+    if (currentUser?.firebaseUid) {
+      if (shouldCloseJob) {
+        const result = await updateFirestoreInvoiceAndJob(
+          selectedInvoice.firestoreId || selectedInvoice.id,
+          invoiceUpdates,
+          selectedInvoiceJob.firestoreId || selectedInvoiceJob.id,
+          { status: "Closed" }
+        );
+        if (result.error) {
+          showActionNotice("error", `Invoice was not marked Paid: ${getFirebaseErrorMessage(result.error)}`);
+          return;
+        }
+      } else {
+        const invoiceResult = await updateFirestoreInvoice(selectedInvoice.firestoreId || selectedInvoice.id, invoiceUpdates);
+        if (invoiceResult.error) {
+          showActionNotice("error", `Invoice status was not saved: ${getFirebaseErrorMessage(invoiceResult.error)}`);
+          return;
+        }
       }
     }
     updateAppState((current) => ({
@@ -3394,12 +3493,7 @@ function AppBuild03() {
         invoice.id === targetInvoiceId
           ? {
               ...invoice,
-              ...invoiceForm,
-              status,
-              submittedAt:
-                status === "Invoice Submitted" && !invoice.submittedAt ? timestamp : invoice.submittedAt,
-              amount: calculateInvoiceTotal(invoiceForm.lineItems),
-              total: calculateInvoiceTotal(invoiceForm.lineItems),
+              ...invoiceUpdates,
             }
           : invoice
       ),
@@ -3414,7 +3508,7 @@ function AppBuild03() {
           )
         : current.jobs,
     }));
-    showActionNotice("success", shouldCloseJob ? "Invoice marked Paid and job closed." : `Invoice marked ${status}.`);
+    showActionNotice("success", shouldCloseJob ? "Invoice marked Paid and job closed." : `Invoice marked ${normalizedStatus}.`);
   };
 
   const openWorkOrders = appState.workOrders.filter((entry) =>
@@ -3426,8 +3520,8 @@ function AppBuild03() {
   const proposalsAwaitingDecision = appState.proposals.filter(
     (proposal) => proposal.isActivePath && proposal.status === "submitted"
   );
-  const invoicesAwaitingReview = appState.invoices.filter((invoice) => invoice.status === "Under Review");
-  const paidInvoices = appState.invoices.filter((invoice) => invoice.status === "Paid");
+  const invoicesAwaitingReview = appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted");
+  const paidInvoices = appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Paid");
 
   const visibleCrewJobs =
     currentUser && currentCrewRecord
@@ -3442,8 +3536,8 @@ function AppBuild03() {
   const crewSubmittedInvoices = [...crewInvoices.filter(({ invoice }) => invoice).map(({ job, invoice }) => ({ id: invoice.id, job, invoice }))].sort(
     (a, b) => new Date(b.invoice?.submittedAt || 0).getTime() - new Date(a.invoice?.submittedAt || 0).getTime()
   );
-  const crewOpenInvoices = crewInvoices.filter(({ invoice }) => invoice && invoice.status !== "Paid");
-  const crewPaidInvoices = crewInvoices.filter(({ invoice }) => invoice?.status === "Paid");
+  const crewOpenInvoices = crewInvoices.filter(({ invoice }) => invoice && normalizeInvoiceStatus(invoice.status) !== "Paid");
+  const crewPaidInvoices = crewInvoices.filter(({ invoice }) => normalizeInvoiceStatus(invoice?.status) === "Paid");
 
   const vendorSites =
     currentUser && currentCrewRecord
@@ -3616,7 +3710,7 @@ function AppBuild03() {
   const filteredInvoices = sortByNewest(
     appState.invoices.filter(
       (invoice) =>
-        (invoiceStatusFilter === "All" || invoice.status === invoiceStatusFilter) &&
+        (invoiceStatusFilter === "All" || normalizeInvoiceStatus(invoice.status) === invoiceStatusFilter) &&
         searchMatches(
           [
             invoice.invoiceNumber,
@@ -3806,7 +3900,7 @@ function AppBuild03() {
         dueDate: "",
         terms: "Net 30",
         notes: "",
-        status: "Invoice Submitted",
+        status: "Submitted",
         lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
       });
       return;
@@ -3819,7 +3913,7 @@ function AppBuild03() {
       dueDate: selectedInvoice.dueDate || "",
       terms: selectedInvoice.terms || "Net 30",
       notes: selectedInvoice.notes || "",
-      status: selectedInvoice.status || "Invoice Submitted",
+      status: normalizeInvoiceStatus(selectedInvoice.status),
       lineItems: selectedInvoice.lineItems?.length
         ? selectedInvoice.lineItems
         : [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
@@ -4540,10 +4634,12 @@ function AppBuild03() {
   const accountingScreen = (
     <div className="screen-grid accounting-screen">
       {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
-      <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Invoice Submitted", value: appState.invoices.filter((invoice) => invoice.status === "Invoice Submitted").length }, { label: "Under Review", value: appState.invoices.filter((invoice) => invoice.status === "Under Review").length }, { label: "Approved", value: appState.invoices.filter((invoice) => invoice.status === "Approved").length }, { label: "Paid", value: appState.invoices.filter((invoice) => invoice.status === "Paid").length }]} /></PageSection>
+      {invoicesLoading ? <div className="inline-notice">Loading Firestore invoices...</div> : null}
+      {invoicesError ? <div className="inline-notice error">Invoice data could not be loaded: {invoicesError}</div> : null}
+      <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Submitted", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted").length }, { label: "Approved", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Approved").length }, { label: "Rejected", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Rejected").length }, { label: "Paid", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Paid").length }]} /></PageSection>
       <SplitView
         list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(row.price) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><div className="list-toolbar"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><FilterRow label="Status" value={invoiceStatusFilter} options={["All", ...INVOICE_STATUS]} onChange={setInvoiceStatusFilter} /></div><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
-        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoiceJob?.status || selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Under Review")} disabled={selectedInvoice.status === "Paid"}>Mark Under Review</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Approve Invoice</button><button className="secondary-button danger-button" onClick={() => updateInvoiceStatus("Rejected")} disabled={selectedInvoice.status === "Paid"}>Reject Invoice</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid / Close Job</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
+        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoiceJob?.status || selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <SellControl sellValue={accountingSellForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Approve Invoice</button><button className="secondary-button danger-button" onClick={() => updateInvoiceStatus("Rejected")} disabled={selectedInvoice.status === "Paid"}>Reject Invoice</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid / Close Job</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
       />
     </div>
   );
@@ -4806,6 +4902,7 @@ function AppBuild03() {
 }
 
 export default AppBuild03;
+
 
 
 

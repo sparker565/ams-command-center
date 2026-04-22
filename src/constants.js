@@ -113,10 +113,8 @@ export const SCREEN_LABELS = {
 };
 
 export const INVOICE_STATUS = [
-  "Not Invoiced",
-  "Invoice Submitted",
-  "Under Review",
+  "Submitted",
   "Approved",
-  "Paid",
   "Rejected",
+  "Paid",
 ];

@@ -6,6 +6,7 @@ const FIRESTORE_COLLECTION_DEFAULTS = {
   jobs: [],
   vendors: [],
   proposals: [],
+  invoices: [],
 };
 
 const BASE_STATE_DEFAULTS = {
@@ -50,7 +51,7 @@ function sanitizeAppState(state = {}) {
     users: state.users || [],
     sites: FIRESTORE_COLLECTION_DEFAULTS.sites,
     proposals: FIRESTORE_COLLECTION_DEFAULTS.proposals,
-    invoices: state.invoices || [],
+    invoices: FIRESTORE_COLLECTION_DEFAULTS.invoices,
     customers: state.customers || [],
     operators: state.operators || [],
     companyProfiles: {
