@@ -24,9 +24,9 @@ export const WORK_ORDER_STATUS = [
   "Scheduled",
 ];
 
-export const JOB_STATUS = ["Assigned", "In Progress", "Completed", "Need Help", "Canceled"];
+export const JOB_STATUS = ["Assigned", "In Progress", "Completed", "Invoiced", "Closed"];
 export const WORK_ORDER_FILTERS = ["All", "Open", "Assigned", "Closed"];
-export const JOB_FILTERS = ["All", "Pending", "In Progress", "Completed", "Need Help"];
+export const JOB_FILTERS = ["All", "Pending", "In Progress", "Completed", "Invoiced", "Closed"];
 export const PROPOSAL_STATUS = ["submitted", "revision_requested", "rejected", "approved"];
 export const PROPOSAL_STATE = ["none", "opportunity", "under_review", "awarded", "closed"];
 

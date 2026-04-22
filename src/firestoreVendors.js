@@ -1,4 +1,4 @@
-import { collection, getDocs } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toArray(value) {
@@ -45,10 +45,76 @@ export function normalizeFirestoreVendor(docSnapshot) {
     city: data.city || "",
     zip: data.zip || "",
     address: data.address || "",
-    password: data.password || "",
+    password: "",
     accessStatus: normalizeVendorStatus(data.status) ? "Active" : "Inactive",
     authStatus: data.authStatus || "Active",
   };
+}
+
+function buildAddressLine({ streetAddress, city, state, zip, fallbackAddress }) {
+  const parts = [streetAddress, city, state, zip].filter(Boolean);
+  if (parts.length) {
+    if (streetAddress && (city || state || zip)) {
+      return `${streetAddress}, ${[city, state, zip].filter(Boolean).join(" ")}`.trim();
+    }
+    return parts.join(", ");
+  }
+  return fallbackAddress || "";
+}
+
+function serializeVendor(vendor) {
+  const serviceTypes = toArray(vendor.serviceTypes || vendor.serviceType);
+  const states = toArray(vendor.states || vendor.state).map((state) => state.toUpperCase());
+  const state = String(vendor.state || states[0] || "").trim().toUpperCase();
+  const streetAddress = vendor.streetAddress || "";
+  const city = vendor.city || "";
+  const zip = vendor.zip || "";
+  const email = String(vendor.email || vendor.userEmail || "").trim();
+
+  return {
+    companyName: vendor.companyName || vendor.name || "Vendor",
+    contactName: vendor.contactName || "",
+    email,
+    userEmail: String(vendor.userEmail || email).trim(),
+    phone: vendor.phone || "",
+    state,
+    states: states.length ? states : state ? [state] : [],
+    serviceType: vendor.serviceType || serviceTypes[0] || "",
+    serviceTypes,
+    status: vendor.status || (vendor.active === false ? "inactive" : "active"),
+    notes: vendor.internalNotes || vendor.notes || "",
+    streetAddress,
+    city,
+    zip,
+    address: buildAddressLine({ streetAddress, city, state, zip, fallbackAddress: vendor.address || "" }),
+  };
+}
+
+export async function createFirestoreVendor(vendor) {
+  try {
+    const payload = serializeVendor(vendor);
+    const ref = await addDoc(collection(db, "vendors"), payload);
+    return {
+      vendor: normalizeFirestoreVendor({ id: ref.id, data: () => payload }),
+      error: null,
+    };
+  } catch (error) {
+    return { vendor: null, error };
+  }
+}
+
+export async function updateFirestoreVendor(vendorId, updates) {
+  try {
+    if (!vendorId) throw new Error("Cannot update a vendor without a vendor ID.");
+    const payload = serializeVendor(updates);
+    await updateDoc(doc(db, "vendors", vendorId), payload);
+    return {
+      vendor: normalizeFirestoreVendor({ id: vendorId, data: () => payload }),
+      error: null,
+    };
+  } catch (error) {
+    return { vendor: null, error };
+  }
 }
 
 export async function loadFirestoreVendors() {

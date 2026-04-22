@@ -1,4 +1,4 @@
-import { collection, getDocs } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "./lib/firebase";
 
 function toIsoString(value) {
@@ -36,6 +36,7 @@ export function normalizeFirestoreWorkOrder(docSnapshot) {
     createdBy: data.createdBy || "",
     serviceType: data.serviceType || "Snow",
     triggerDepth: data.triggerDepth ?? "",
+    vendorCost: data.vendorCost ?? "",
     assignedVendorId: data.assignedVendorId || "",
     assignedVendorName: data.assignedVendorName || "",
     amsWorkOrderNumber: data.amsWorkOrderNumber || data.workOrderNumber || docSnapshot.id,
@@ -53,6 +54,67 @@ export function normalizeFirestoreWorkOrder(docSnapshot) {
     seasonEnd: toIsoString(data.seasonEnd),
     seasonalServiceType: data.seasonalServiceType || "",
   };
+}
+
+function serializeWorkOrderCreate(workOrder) {
+  const title = workOrder.title || workOrder.siteName || "Work Order";
+  return {
+    title,
+    siteId: workOrder.siteId || "",
+    siteName: workOrder.siteName || title,
+    state: workOrder.state || "",
+    status: normalizeWorkOrderStatus(workOrder.status),
+    priority: workOrder.priority || "Normal",
+    description: workOrder.description || title,
+    createdAt: workOrder.createdAt || new Date().toISOString(),
+    createdBy: workOrder.createdBy || "",
+    serviceType: workOrder.serviceType || "General Maintenance",
+    triggerDepth: workOrder.triggerDepth ?? "",
+    assignedVendorId: workOrder.assignedVendorId || "",
+    assignedVendorName: workOrder.assignedVendorName || "",
+    amsWorkOrderNumber: workOrder.amsWorkOrderNumber || "",
+    workOrderNumber: workOrder.amsWorkOrderNumber || "",
+    externalWorkOrderNumber: workOrder.externalWorkOrderNumber || "",
+    proposalRequired: Boolean(workOrder.proposalRequired),
+    proposalRequestedAt: workOrder.proposalRequestedAt || "",
+    proposalAwardedAt: workOrder.proposalAwardedAt || "",
+    jobId: workOrder.jobId || "",
+    requireBeforeAfterPhotos: Boolean(workOrder.requireBeforeAfterPhotos),
+    workType: workOrder.workType || "one_time",
+    recurringFrequency: workOrder.recurringFrequency || "",
+    recurringVendorCost: workOrder.recurringVendorCost ?? "",
+    vendorCost: workOrder.vendorCost ?? "",
+    recurringPricingNotes: workOrder.recurringPricingNotes || "",
+    seasonStart: workOrder.seasonStart || "",
+    seasonEnd: workOrder.seasonEnd || "",
+    seasonalServiceType: workOrder.seasonalServiceType || "",
+  };
+}
+
+export async function createFirestoreWorkOrder(workOrder) {
+  try {
+    const payload = serializeWorkOrderCreate(workOrder);
+    const ref = await addDoc(collection(db, "workOrders"), payload);
+    return {
+      workOrder: normalizeFirestoreWorkOrder({
+        id: ref.id,
+        data: () => payload,
+      }),
+      error: null,
+    };
+  } catch (error) {
+    return { workOrder: null, error };
+  }
+}
+
+export async function updateFirestoreWorkOrder(workOrderId, updates) {
+  try {
+    if (!workOrderId) throw new Error("Cannot update a work order without a work order ID.");
+    await updateDoc(doc(db, "workOrders", workOrderId), updates);
+    return { error: null };
+  } catch (error) {
+    return { error };
+  }
 }
 
 export async function loadFirestoreWorkOrders() {

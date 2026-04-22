@@ -533,7 +533,7 @@ export function AvailableWorkCard({ workOrder, site, children }) {
   );
 }
 
-export function JobCard({ job, onStart, onComplete, onHelp }) {
+export function JobCard({ job, onStart, onComplete }) {
   const scopePreview = job.scope || job.description || "Scope details not provided.";
   const startStatus = job.startTime ? "Started" : "Not Started";
   const completionStatus = job.completedTime ? "Completed" : "Open";
@@ -566,15 +566,19 @@ export function JobCard({ job, onStart, onComplete, onHelp }) {
         <span>Complete: {job.completedTime ? new Date(job.completedTime).toLocaleString() : "Not completed"}</span>
       </div>
       <div className="job-card-actions">
-        <button className="primary-button" onClick={() => onStart(job.id)} disabled={Boolean(job.startTime)}>
-          Start Job
-        </button>
-        <button className="secondary-button" onClick={() => onComplete(job.id)} disabled={Boolean(job.completedTime)}>
-          Complete Job
-        </button>
-        <button className="secondary-button" onClick={() => onHelp(job.id)}>
-          Need Help
-        </button>
+        {job.status === "Assigned" ? (
+          <button className="primary-button" onClick={() => onStart(job.id)}>
+            Start Job
+          </button>
+        ) : null}
+        {job.status === "In Progress" ? (
+          <button className="secondary-button" onClick={() => onComplete(job.id)}>
+            Complete Job
+          </button>
+        ) : null}
+        {!["Assigned", "In Progress"].includes(job.status) ? (
+          <span className="detail-muted">Next step available in invoices.</span>
+        ) : null}
       </div>
     </article>
   );

@@ -1,9 +1,11 @@
 import { SESSION_STORAGE_KEY, STORAGE_KEY } from "./constants";
 
 const FIRESTORE_COLLECTION_DEFAULTS = {
+  sites: [],
   workOrders: [],
   jobs: [],
   vendors: [],
+  proposals: [],
 };
 
 const BASE_STATE_DEFAULTS = {
@@ -46,8 +48,8 @@ function sanitizeAppState(state = {}) {
     ...state,
     ...FIRESTORE_COLLECTION_DEFAULTS,
     users: state.users || [],
-    sites: state.sites || [],
-    proposals: state.proposals || [],
+    sites: FIRESTORE_COLLECTION_DEFAULTS.sites,
+    proposals: FIRESTORE_COLLECTION_DEFAULTS.proposals,
     invoices: state.invoices || [],
     customers: state.customers || [],
     operators: state.operators || [],

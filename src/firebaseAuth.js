@@ -1,4 +1,4 @@
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword } from "firebase/auth";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { app, db } from "./lib/firebase";
 
@@ -58,6 +58,12 @@ export function getFirebaseErrorMessage(error) {
   if (code === "auth/invalid-api-key" || code === "auth/app-not-authorized") {
     return "Firebase configuration is missing or invalid.";
   }
+  if (code === "auth/requires-recent-login") {
+    return "Please log out and log back in before changing your password.";
+  }
+  if (code === "auth/weak-password") {
+    return "Password must be at least 6 characters.";
+  }
 
   return error?.message || "Firebase sign-in failed. Please try again.";
 }
@@ -65,6 +71,16 @@ export function getFirebaseErrorMessage(error) {
 export async function signOutUser() {
   try {
     await signOut(firebaseAuth);
+    return { error: null };
+  } catch (error) {
+    return { error };
+  }
+}
+
+export async function updateCurrentUserPassword(password) {
+  try {
+    if (!firebaseAuth.currentUser) throw new Error("No authenticated Firebase user is active.");
+    await updatePassword(firebaseAuth.currentUser, password);
     return { error: null };
   } catch (error) {
     return { error };
