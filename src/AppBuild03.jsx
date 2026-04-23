@@ -38,7 +38,14 @@ import {
   TopActionBar,
   UnderConstruction,
 } from "./components";
-import { getFirebaseErrorMessage, loadFirestoreUserByEmail, signIn, signOutUser, subscribeToAuthState, updateCurrentUserPassword } from "./firebaseAuth";
+import {
+  ensureFirestoreUserProfile,
+  getFirebaseErrorMessage,
+  signIn,
+  signOutUser,
+  subscribeToAuthState,
+  updateCurrentUserPassword,
+} from "./firebaseAuth";
 import {
   createFirestoreInvoiceAndMarkJob,
   loadFirestoreInvoices,
@@ -126,12 +133,20 @@ function isCrewUser(user) {
 }
 
 function getDisplayRole(user) {
-  return user?.displayRole || (user?.role === ROLES.VENDOR ? "Crew" : user?.role || "");
+  return user?.displayRole || user?.role || "";
 }
 
 function getFirestoreRole(role) {
+  const normalizedRole = String(role || "").trim().toLowerCase().replace(/\s+/g, "_");
+  if (normalizedRole === "owner") return ROLES.OWNER;
+  if (normalizedRole === "ams_admin" || normalizedRole === "ams") return ROLES.AMS_ADMIN;
+  if (normalizedRole === "ams_manager") return ROLES.AMS_MANAGER;
+  if (normalizedRole === "vendor") return ROLES.VENDOR;
+  if (normalizedRole === "crew") return ROLES.CREW;
   if (role === ROLES.AMS_ADMIN) return ROLES.AMS_ADMIN;
+  if (role === ROLES.AMS_MANAGER) return ROLES.AMS_MANAGER;
   if (role === ROLES.VENDOR) return ROLES.VENDOR;
+  if (role === ROLES.OWNER) return ROLES.OWNER;
   return role || "";
 }
 
@@ -223,14 +238,20 @@ function normalizeUser(user) {
   const zip = hasBadDefaultAmsAddress ? "" : user.zip || legacyAddress.zip;
   return {
     ...user,
+    email: normalizeEmail(user.email || ""),
     active: user.active ?? (user.accessStatus || "Active") === "Active",
+    status: user.status || ((user.active ?? (user.accessStatus || "Active") === "Active") ? "active" : "inactive"),
     accessStatus: user.accessStatus || (user.active === false ? "Inactive" : "Active"),
     authStatus: user.authStatus || (user.active === false ? "Disabled" : "Active"),
     role: getFirestoreRole(user.role),
-    displayRole: user.displayRole || (user.role === ROLES.VENDOR ? "Crew" : user.role || ""),
+    displayRole: user.displayRole || user.role || "",
     phone: user.phone || "",
     jobTitle: user.jobTitle || "",
     companyName: user.companyName || "",
+    portal: user.portal || getPortalPathForUser(user),
+    defaultPortal: user.defaultPortal || getPortalPathForUser(user),
+    createdAt: user.createdAt || "",
+    updatedAt: user.updatedAt || "",
     streetAddress,
     city,
     state,
@@ -803,7 +824,7 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
     getAllUserPool(state).find((user) => normalizeEmail(user.email) === email) ||
     null;
   const role = getFirestoreRole(profile?.role);
-  const displayRole = profile?.displayRole || (role === ROLES.VENDOR ? "Crew" : role);
+  const displayRole = profile?.displayRole || role;
   const name =
     profile?.name ||
     profile?.displayName ||
@@ -821,6 +842,7 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
     role,
     displayRole,
     active: profile?.active ?? existingUser?.active ?? true,
+    status: profile?.status || existingUser?.status || "active",
     accessStatus: profile?.accessStatus || existingUser?.accessStatus || "Active",
     authStatus: profile?.authStatus || "Active",
     phone: profile?.phone || existingUser?.phone || "",
@@ -830,6 +852,8 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
       profile?.company ||
       existingUser?.companyName ||
       (role === ROLES.VENDOR ? "Crew Company" : "Advanced Maintenance Services"),
+    portal: profile?.portal || existingUser?.portal || getPortalPathForUser({ role }),
+    defaultPortal: profile?.defaultPortal || existingUser?.defaultPortal || getPortalPathForUser({ role }),
     streetAddress: profile?.streetAddress || existingUser?.streetAddress || "",
     city: profile?.city || existingUser?.city || "",
     state: profile?.state || existingUser?.state || "",
@@ -837,6 +861,8 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
     internalNotes: existingUser?.internalNotes || "",
     firebaseUid: authUser?.uid || existingUser?.firebaseUid || "",
     firestoreUserId: profile?.id || existingUser?.firestoreUserId || "",
+    createdAt: profile?.createdAt || existingUser?.createdAt || "",
+    updatedAt: profile?.updatedAt || existingUser?.updatedAt || "",
   });
 }
 
@@ -1851,6 +1877,29 @@ function AppBuild03() {
     return true;
   };
 
+  const resolveFirebaseAppUser = async (authUser, stateSnapshot = appState) => {
+    if (!authUser?.email) {
+      return { user: null, error: new Error("Authenticated Firebase user is missing an email address.") };
+    }
+
+    const ensuredProfile = await ensureFirestoreUserProfile(authUser);
+    if (ensuredProfile.error) {
+      return { user: null, error: ensuredProfile.error };
+    }
+
+    const profile = ensuredProfile.profile;
+    if (!profile) {
+      return { user: null, error: new Error("Authenticated user was not found in the Firestore users collection.") };
+    }
+
+    const resolvedUser = buildUserFromFirestoreProfile(profile, authUser, stateSnapshot);
+    if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(resolvedUser.role)) {
+      return { user: null, error: new Error("Your Firestore user role is not supported for this portal.") };
+    }
+
+    return { user: resolvedUser, error: null };
+  };
+
   const handleLogin = async (email, password) => {
     setLoginError("");
     setLoginLoading(true);
@@ -1861,29 +1910,15 @@ function AppBuild03() {
       return false;
     }
 
-    const profileResult = await loadFirestoreUserByEmail(firebaseResult.user.email || email);
-    if (profileResult.error) {
+    const resolvedUserResult = await resolveFirebaseAppUser(firebaseResult.user, appState);
+    if (resolvedUserResult.error) {
       await signOutUser();
       setLoginLoading(false);
-      setLoginError(getFirebaseErrorMessage(profileResult.error));
-      return false;
-    }
-    if (!profileResult.profile) {
-      await signOutUser();
-      setLoginLoading(false);
-      setLoginError("Authenticated user was not found in the Firestore users collection.");
+      setLoginError(getFirebaseErrorMessage(resolvedUserResult.error));
       return false;
     }
 
-    const firebaseUser = buildUserFromFirestoreProfile(profileResult.profile, firebaseResult.user, appState);
-    if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(firebaseUser.role)) {
-      await signOutUser();
-      setLoginLoading(false);
-      setLoginError("Your Firestore user role is not supported for this portal.");
-      return false;
-    }
-
-    completeFirebaseLogin(firebaseUser);
+    completeFirebaseLogin(resolvedUserResult.user);
     setLoginLoading(false);
     return true;
   };
@@ -1925,31 +1960,17 @@ function AppBuild03() {
         return;
       }
 
-      const profileResult = await loadFirestoreUserByEmail(firebaseUser.email);
+      const resolvedUserResult = await resolveFirebaseAppUser(firebaseUser, appState);
       if (!active) return;
 
-      if (profileResult.error) {
+      if (resolvedUserResult.error) {
         await signOutUser();
-        setLoginError(getFirebaseErrorMessage(profileResult.error));
-        setAuthRestoring(false);
-        return;
-      }
-      if (!profileResult.profile) {
-        await signOutUser();
-        setLoginError("Authenticated user was not found in the Firestore users collection.");
+        setLoginError(getFirebaseErrorMessage(resolvedUserResult.error));
         setAuthRestoring(false);
         return;
       }
 
-      const restoredUser = buildUserFromFirestoreProfile(profileResult.profile, firebaseUser, appState);
-      if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(restoredUser.role)) {
-        await signOutUser();
-        setLoginError("Your Firestore user role is not supported for this portal.");
-        setAuthRestoring(false);
-        return;
-      }
-
-      completeFirebaseLogin(restoredUser);
+      completeFirebaseLogin(resolvedUserResult.user);
       setAuthRestoring(false);
     });
 
