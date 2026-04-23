@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { APP_VERSION, ROLES } from "./constants";
 
+const SHOW_DEMO_LOGIN = import.meta.env.DEV && import.meta.env.VITE_SHOW_DEMO_LOGIN === "true";
+
 export function BrandLogo({ role, accent = false, className = "" }) {
   const isOwner = role === ROLES.OWNER;
   const src = isOwner
@@ -215,12 +217,16 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin, l
           <button className="primary-button" onClick={onLogin} disabled={loading}>
             {loading ? "Signing in..." : "Login"}
           </button>
-          <button className="secondary-button" onClick={() => onDemoLogin("ams")} disabled={loading}>
-            AMS Demo
-          </button>
-          <button className="secondary-button" onClick={() => onDemoLogin("crew")} disabled={loading}>
-            Crew Demo
-          </button>
+          {SHOW_DEMO_LOGIN ? (
+            <>
+              <button className="secondary-button" onClick={() => onDemoLogin("ams")} disabled={loading}>
+                AMS Demo
+              </button>
+              <button className="secondary-button" onClick={() => onDemoLogin("crew")} disabled={loading}>
+                Crew Demo
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
