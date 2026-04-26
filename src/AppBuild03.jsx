@@ -54,7 +54,11 @@ import {
   updateFirestoreInvoiceAndJob,
   updateFirestoreInvoice,
 } from "./firestoreInvoices";
-import { createOrLinkFirestoreJobForWorkOrder, loadFirestoreJobs, updateFirestoreJob } from "./firestoreJobs";
+import {
+  createOrLinkFirestoreJobForWorkOrder,
+  loadFirestoreJobs,
+  updateFirestoreJob,
+} from "./firestoreJobs";
 import {
   approveFirestoreProposalForWorkOrder,
   createFirestoreProposal,
@@ -69,8 +73,17 @@ import {
   loadFirestoreSites,
   updateFirestoreSite,
 } from "./firestoreSites";
-import { createFirestoreVendor, deleteFirestoreVendor, loadFirestoreVendors, updateFirestoreVendor } from "./firestoreVendors";
-import { createFirestoreWorkOrder, loadFirestoreWorkOrders, updateFirestoreWorkOrder } from "./firestoreWorkOrders";
+import {
+  createFirestoreVendor,
+  deleteFirestoreVendor,
+  loadFirestoreVendors,
+  updateFirestoreVendor,
+} from "./firestoreVendors";
+import {
+  createFirestoreWorkOrder,
+  loadFirestoreWorkOrders,
+  updateFirestoreWorkOrder,
+} from "./firestoreWorkOrders";
 import { parseSiteImportFile, SITE_IMPORT_HEADERS } from "./siteImport";
 
 function createId(prefix) {
@@ -98,7 +111,13 @@ function getCanonicalSellValue(record) {
   return String(record?.sell ?? record?.sellPrice ?? "").trim();
 }
 
-function buildAddressLine({ streetAddress, city, state, zip, fallbackAddress }) {
+function buildAddressLine({
+  streetAddress,
+  city,
+  state,
+  zip,
+  fallbackAddress,
+}) {
   const parts = [streetAddress, city, state, zip].filter(Boolean);
   if (parts.length) {
     if (streetAddress && (city || state || zip)) {
@@ -110,7 +129,9 @@ function buildAddressLine({ streetAddress, city, state, zip, fallbackAddress }) 
 }
 
 function parseLegacyAddress(address = "") {
-  const [streetAddress = "", city = "", stateZip = ""] = String(address).split(",").map((part) => part.trim());
+  const [streetAddress = "", city = "", stateZip = ""] = String(address)
+    .split(",")
+    .map((part) => part.trim());
   const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s*(\d{5}(?:-\d{4})?)?$/);
   return {
     streetAddress,
@@ -137,9 +158,13 @@ function getDisplayRole(user) {
 }
 
 function getFirestoreRole(role) {
-  const normalizedRole = String(role || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const normalizedRole = String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
   if (normalizedRole === "owner") return ROLES.OWNER;
-  if (normalizedRole === "ams_admin" || normalizedRole === "ams") return ROLES.AMS_ADMIN;
+  if (normalizedRole === "ams_admin" || normalizedRole === "ams")
+    return ROLES.AMS_ADMIN;
   if (normalizedRole === "ams_manager") return ROLES.AMS_MANAGER;
   if (normalizedRole === "vendor") return ROLES.VENDOR;
   if (normalizedRole === "crew") return ROLES.CREW;
@@ -156,7 +181,9 @@ function toNumber(value) {
 }
 
 function calculateInvoiceTotal(lineItems = []) {
-  return lineItems.reduce((sum, item) => sum + toNumber(item.amount), 0).toFixed(2);
+  return lineItems
+    .reduce((sum, item) => sum + toNumber(item.amount), 0)
+    .toFixed(2);
 }
 
 function getAllUserPool(state) {
@@ -169,7 +196,10 @@ function getAllUserPool(state) {
 }
 
 function findCurrentUser(state) {
-  return getAllUserPool(state).find((user) => user.id === state.ui?.currentUserId) || null;
+  return (
+    getAllUserPool(state).find((user) => user.id === state.ui?.currentUserId) ||
+    null
+  );
 }
 
 function getActiveScreen(state, user) {
@@ -193,7 +223,8 @@ function normalizeVendor(vendor) {
     password: vendor.password || "",
     internalNotes: vendor.internalNotes || "",
     states: vendor.states || [],
-    serviceTypes: vendor.serviceTypes || (vendor.serviceType ? [vendor.serviceType] : []),
+    serviceTypes:
+      vendor.serviceTypes || (vendor.serviceType ? [vendor.serviceType] : []),
     address: buildAddressLine({
       streetAddress: vendor.streetAddress || legacyAddress.streetAddress,
       city: vendor.city || legacyAddress.city,
@@ -216,7 +247,13 @@ function normalizeSite(site) {
     city,
     state,
     zip,
-    address: buildAddressLine({ streetAddress, city, state, zip, fallbackAddress: site.address || "" }),
+    address: buildAddressLine({
+      streetAddress,
+      city,
+      state,
+      zip,
+      fallbackAddress: site.address || "",
+    }),
     internalNotes: site.internalNotes || "",
     assignedVendorId: site.assignedVendorId || "",
     assignedVendorName: site.assignedVendorName || "",
@@ -231,18 +268,32 @@ function normalizeUser(user) {
   const legacyAddress = parseLegacyAddress(user.address || "");
   const hasBadDefaultAmsAddress =
     user.streetAddress === "19B North Street" &&
-    ["Advanced Maintenance Services", "SparkCommand Systems", "AMS Demo Crew Company"].includes(user.companyName || "");
-  const streetAddress = hasBadDefaultAmsAddress ? "" : user.streetAddress || legacyAddress.streetAddress;
+    [
+      "Advanced Maintenance Services",
+      "SparkCommand Systems",
+      "AMS Demo Crew Company",
+    ].includes(user.companyName || "");
+  const streetAddress = hasBadDefaultAmsAddress
+    ? ""
+    : user.streetAddress || legacyAddress.streetAddress;
   const city = hasBadDefaultAmsAddress ? "" : user.city || legacyAddress.city;
-  const state = hasBadDefaultAmsAddress ? "" : user.state || legacyAddress.state;
+  const state = hasBadDefaultAmsAddress
+    ? ""
+    : user.state || legacyAddress.state;
   const zip = hasBadDefaultAmsAddress ? "" : user.zip || legacyAddress.zip;
   return {
     ...user,
     email: normalizeEmail(user.email || ""),
     active: user.active ?? (user.accessStatus || "Active") === "Active",
-    status: user.status || ((user.active ?? (user.accessStatus || "Active") === "Active") ? "active" : "inactive"),
-    accessStatus: user.accessStatus || (user.active === false ? "Inactive" : "Active"),
-    authStatus: user.authStatus || (user.active === false ? "Disabled" : "Active"),
+    status:
+      user.status ||
+      ((user.active ?? (user.accessStatus || "Active") === "Active")
+        ? "active"
+        : "inactive"),
+    accessStatus:
+      user.accessStatus || (user.active === false ? "Inactive" : "Active"),
+    authStatus:
+      user.authStatus || (user.active === false ? "Disabled" : "Active"),
     role: getFirestoreRole(user.role),
     displayRole: user.displayRole || user.role || "",
     phone: user.phone || "",
@@ -293,7 +344,9 @@ function normalizeProposal(proposal) {
     revisionCount,
     revisionNumber: proposal.revisionNumber || revisionCount,
     supersedesProposalId: proposal.supersedesProposalId || null,
-    isActivePath: proposal.isActivePath ?? ["submitted", "revision_requested"].includes(status),
+    isActivePath:
+      proposal.isActivePath ??
+      ["submitted", "revision_requested"].includes(status),
     rejectedAt: proposal.rejectedAt || "",
     approvedAt: proposal.approvedAt || "",
     requestedRevisionAt: proposal.requestedRevisionAt || "",
@@ -319,7 +372,8 @@ function normalizeJob(job) {
     completedAt: completedTime,
     serviceDate: job.serviceDate || completedTime || "",
     serviceType: normalizeServiceType(job.serviceType) || job.serviceType || "",
-    servicePerformed: normalizeServiceType(job.servicePerformed || job.serviceType) || "",
+    servicePerformed:
+      normalizeServiceType(job.servicePerformed || job.serviceType) || "",
     scope: job.scope || job.description || "",
     notes: job.notes || "",
   };
@@ -334,7 +388,8 @@ function normalizeInvoice(invoice) {
     rate: lineItem.rate ?? "",
     amount: lineItem.amount ?? "",
   }));
-  const total = invoice.total ?? invoice.amount ?? calculateInvoiceTotal(lineItems);
+  const total =
+    invoice.total ?? invoice.amount ?? calculateInvoiceTotal(lineItems);
   return {
     ...invoice,
     invoiceNumber: invoice.invoiceNumber || "",
@@ -376,11 +431,22 @@ function isClosedWorkOrder(status) {
 
 function getWorkOrderProposalState(workOrder, proposals) {
   if (isCanceledWorkOrder(workOrder.status)) return "closed";
-  if (workOrder.proposalAwardedAt || workOrder.assignedVendorId || workOrder.jobId) return "awarded";
+  if (
+    workOrder.proposalAwardedAt ||
+    workOrder.assignedVendorId ||
+    workOrder.jobId
+  )
+    return "awarded";
 
-  const relatedProposals = proposals.filter((proposal) => proposal.workOrderId === workOrder.id);
-  const hasApprovedProposal = relatedProposals.some((proposal) => proposal.status === "approved");
-  const hasActiveProposal = relatedProposals.some((proposal) => proposal.isActivePath);
+  const relatedProposals = proposals.filter(
+    (proposal) => proposal.workOrderId === workOrder.id,
+  );
+  const hasApprovedProposal = relatedProposals.some(
+    (proposal) => proposal.status === "approved",
+  );
+  const hasActiveProposal = relatedProposals.some(
+    (proposal) => proposal.isActivePath,
+  );
 
   if (hasApprovedProposal) return "awarded";
   if (hasActiveProposal) return "under_review";
@@ -398,12 +464,35 @@ function getNextAmsWorkOrderNumber(workOrders) {
 }
 
 function normalizeWorkOrder(workOrder, proposals, jobs) {
-  const linkedJob = jobs.find((job) => job.workOrderId === workOrder.id);
-  const status = String(workOrder.status || "Needs Review").trim();
+  const linkedJob = jobs.find(
+    (job) =>
+      job.workOrderId === workOrder.id ||
+      job.workOrderId === workOrder.firestoreId ||
+      job.id === workOrder.jobId,
+  );
+
+  const jobStatusMap = {
+    Assigned: "Assigned",
+    Scheduled: "Assigned",
+    Started: "In Progress",
+    "In Progress": "In Progress",
+    Completed: "Completed",
+    "Ready for Invoice": "Ready for Invoice",
+    Invoiced: "Invoiced",
+    Paid: "Paid",
+  };
+
+  const derivedStatus = linkedJob
+    ? jobStatusMap[linkedJob.status] || workOrder.status
+    : workOrder.status;
+
+  const status = String(derivedStatus || "Needs Review").trim();
   const statusLookup = status.toLowerCase();
+
   const normalized = {
     ...workOrder,
-    amsWorkOrderNumber: workOrder.amsWorkOrderNumber || getNextAmsWorkOrderNumber([workOrder]),
+    amsWorkOrderNumber:
+      workOrder.amsWorkOrderNumber || getNextAmsWorkOrderNumber([workOrder]),
     externalWorkOrderNumber: workOrder.externalWorkOrderNumber || "",
     proposalRequired: Boolean(workOrder.proposalRequired),
     proposalRequestedAt: workOrder.proposalRequestedAt || "",
@@ -441,14 +530,15 @@ function normalizeStateData(state) {
   const jobs = (state.jobs || []).map(normalizeJob);
   const invoices = (state.invoices || []).map(normalizeInvoice);
   const workOrders = (state.workOrders || []).map((workOrder) =>
-    normalizeWorkOrder(workOrder, proposals, jobs)
+    normalizeWorkOrder(workOrder, proposals, jobs),
   );
   const selectedSiteId =
-    state.ui?.selectedSiteId && sites.some((site) => site.id === state.ui.selectedSiteId)
+    state.ui?.selectedSiteId &&
+    sites.some((site) => site.id === state.ui.selectedSiteId)
       ? state.ui.selectedSiteId
       : sites[0]?.id || null;
   const currentUserExists = getAllUserPool({ ...state, users, vendors }).some(
-    (user) => user.id === state.ui?.currentUserId
+    (user) => user.id === state.ui?.currentUserId,
   );
 
   return {
@@ -481,10 +571,21 @@ function normalizeStateData(state) {
 function getWorkOrderFilterMatch(workOrder, filter) {
   if (filter === "All") return true;
   if (filter === "Open") {
-    return ["Needs Review", "Needs Attention", "Needs Vendor", "Scheduled", "Open"].includes(workOrder.status);
+    return [
+      "Needs Review",
+      "Needs Attention",
+      "Needs Vendor",
+      "Scheduled",
+      "Open",
+    ].includes(workOrder.status);
   }
-  if (filter === "Assigned") return ["Assigned", "In Progress"].includes(workOrder.status);
-  if (filter === "Closed") return ["Completed", "Ready for Invoice"].includes(workOrder.status) || isClosedWorkOrder(workOrder.status);
+  if (filter === "Assigned")
+    return ["Assigned", "In Progress"].includes(workOrder.status);
+  if (filter === "Closed")
+    return (
+      ["Completed", "Ready for Invoice"].includes(workOrder.status) ||
+      isClosedWorkOrder(workOrder.status)
+    );
   return true;
 }
 
@@ -505,7 +606,11 @@ function sortByNewest(items, key) {
 function searchMatches(values, query) {
   if (!query.trim()) return true;
   const normalizedQuery = query.trim().toLowerCase();
-  return values.some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
+  return values.some((value) =>
+    String(value || "")
+      .toLowerCase()
+      .includes(normalizedQuery),
+  );
 }
 
 function findCrewForUser(vendors, currentUser) {
@@ -513,9 +618,22 @@ function findCrewForUser(vendors, currentUser) {
   const currentEmail = normalizeEmail(currentUser.email);
 
   return (
-    vendors.find((vendor) => vendor.userId && vendor.userId === currentUser.id) ||
-    vendors.find((vendor) => normalizeEmail(vendor.userEmail || vendor.email) === currentEmail) ||
-    vendors.find((vendor) => String(vendor.name || "").trim().toLowerCase() === String(currentUser.name || "").trim().toLowerCase()) ||
+    vendors.find(
+      (vendor) => vendor.userId && vendor.userId === currentUser.id,
+    ) ||
+    vendors.find(
+      (vendor) =>
+        normalizeEmail(vendor.userEmail || vendor.email) === currentEmail,
+    ) ||
+    vendors.find(
+      (vendor) =>
+        String(vendor.name || "")
+          .trim()
+          .toLowerCase() ===
+        String(currentUser.name || "")
+          .trim()
+          .toLowerCase(),
+    ) ||
     null
   );
 }
@@ -523,9 +641,10 @@ function findCrewForUser(vendors, currentUser) {
 function getCrewWorkOrderProposals(proposals, workOrderId, vendorId) {
   return sortByNewest(
     proposals.filter(
-      (proposal) => proposal.workOrderId === workOrderId && proposal.vendorId === vendorId
+      (proposal) =>
+        proposal.workOrderId === workOrderId && proposal.vendorId === vendorId,
     ),
-    "submittedAt"
+    "submittedAt",
   );
 }
 
@@ -535,20 +654,33 @@ function getLatestCrewProposal(proposals, workOrderId, vendorId) {
 
 function getVendorCoverageStates(vendor) {
   return [vendor?.state, ...(vendor?.states || [])]
-    .map((state) => String(state || "").trim().toUpperCase())
+    .map((state) =>
+      String(state || "")
+        .trim()
+        .toUpperCase(),
+    )
     .filter(Boolean);
 }
 
 function getWorkOrderDispatchState(workOrder, site) {
-  return String(workOrder?.state || site?.state || "").trim().toUpperCase();
+  return String(workOrder?.state || site?.state || "")
+    .trim()
+    .toUpperCase();
 }
 
 function getNormalizedStatus(status) {
-  return String(status || "").trim().toLowerCase();
+  return String(status || "")
+    .trim()
+    .toLowerCase();
 }
 
 function isCrewOpenWorkOrderStatus(status) {
-  return ["open", "needs vendor", "open opportunity", "proposal needed"].includes(getNormalizedStatus(status));
+  return [
+    "open",
+    "needs vendor",
+    "open opportunity",
+    "proposal needed",
+  ].includes(getNormalizedStatus(status));
 }
 
 function hasAssignedValue(value) {
@@ -567,7 +699,11 @@ function getWorkOrderStatusDisplay(workOrder) {
   const rawStatus = String(workOrder?.status || "Needs Review").trim();
   const normalizedStatus = getNormalizedStatus(rawStatus);
 
-  if (["assigned", "in progress", "completed", "canceled"].includes(normalizedStatus)) {
+  if (
+    ["assigned", "in progress", "completed", "canceled"].includes(
+      normalizedStatus,
+    )
+  ) {
     return rawStatus;
   }
 
@@ -616,12 +752,30 @@ function createDemoSessionUser(type) {
   });
 }
 
-function isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs }) {
+function isCrewEligibleForWorkOrder({
+  workOrder,
+  site,
+  vendor,
+  proposals,
+  jobs,
+}) {
   if (!workOrder || !vendor?.active) return false;
   if (!isCrewOpenWorkOrderStatus(workOrder.status)) return false;
   if (isWorkOrderTrulyAssigned(workOrder)) return false;
-  if (jobs.some((job) => String(job.workOrderId || "").trim() === String(workOrder.id || "").trim())) return false;
-  if (proposals.some((proposal) => proposal.workOrderId === workOrder.id && proposal.status === "approved")) {
+  if (
+    jobs.some(
+      (job) =>
+        String(job.workOrderId || "").trim() ===
+        String(workOrder.id || "").trim(),
+    )
+  )
+    return false;
+  if (
+    proposals.some(
+      (proposal) =>
+        proposal.workOrderId === workOrder.id && proposal.status === "approved",
+    )
+  ) {
     return false;
   }
   const workOrderState = getWorkOrderDispatchState(workOrder, site);
@@ -630,8 +784,13 @@ function isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs }
 }
 
 function canCrewSubmitProposal({ workOrder, site, vendor, proposals, jobs }) {
-  if (!isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs })) return false;
-  const latestProposal = getLatestCrewProposal(proposals, workOrder.id, vendor.id);
+  if (!isCrewEligibleForWorkOrder({ workOrder, site, vendor, proposals, jobs }))
+    return false;
+  const latestProposal = getLatestCrewProposal(
+    proposals,
+    workOrder.id,
+    vendor.id,
+  );
   if (!latestProposal) return true;
   return ["rejected", "revision_requested"].includes(latestProposal.status);
 }
@@ -652,7 +811,9 @@ function normalizeCostForCompare(value) {
 }
 
 function didCostValueChange(previousCost, nextCost) {
-  return normalizeCostForCompare(previousCost) !== normalizeCostForCompare(nextCost);
+  return (
+    normalizeCostForCompare(previousCost) !== normalizeCostForCompare(nextCost)
+  );
 }
 
 function getPricingStatus(job) {
@@ -678,7 +839,9 @@ function buildPricingFields({ sell, currentUser, existingJob }) {
   return {
     sell: hasSell ? normalizedSell : "",
     pricingStatus: hasSell ? "set" : "not_set",
-    sellSetBy: hasSell ? currentUser?.id || existingJob?.sellSetBy || null : null,
+    sellSetBy: hasSell
+      ? currentUser?.id || existingJob?.sellSetBy || null
+      : null,
     sellSetAt: hasSell
       ? changed
         ? timestamp
@@ -688,7 +851,11 @@ function buildPricingFields({ sell, currentUser, existingJob }) {
 }
 
 function getInheritedJobCost(workOrder, explicitPrice) {
-  if (explicitPrice !== undefined && explicitPrice !== null && String(explicitPrice).trim() !== "") {
+  if (
+    explicitPrice !== undefined &&
+    explicitPrice !== null &&
+    String(explicitPrice).trim() !== ""
+  ) {
     return explicitPrice;
   }
 
@@ -707,7 +874,8 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
     siteName: workOrder.siteName,
     vendorId: vendor.id,
     vendorName: vendor.name,
-    serviceType: normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
+    serviceType:
+      normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
     description: workOrder.description,
     price: getInheritedJobCost(workOrder, price),
     ...buildPricingFields({ sell, currentUser }),
@@ -715,7 +883,8 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
     startTime: "",
     completedTime: "",
     serviceDate: "",
-    servicePerformed: normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
+    servicePerformed:
+      normalizeServiceType(workOrder.serviceType) || workOrder.serviceType,
     scope: workOrder.description,
     notes: "",
     completedAt: "",
@@ -731,7 +900,8 @@ function buildJobRecord({ workOrder, vendor, price, sell, currentUser }) {
 
 function buildInvoiceRecord({ job, workOrder, currentUser }) {
   const amount = job.price || "";
-  const internalReference = workOrder?.amsWorkOrderNumber || `INV-${String(job.id).slice(-6)}`;
+  const internalReference =
+    workOrder?.amsWorkOrderNumber || `INV-${String(job.id).slice(-6)}`;
   return {
     id: createId("invoice"),
     jobId: job.id,
@@ -812,7 +982,8 @@ function getPortalPathForUser(user) {
 
 function getPortalEyebrow(user) {
   if (user?.role === ROLES.OWNER) return "SparkCommand Systems";
-  if (AMS_ROLES.includes(user?.role)) return `AMS Portal • Version ${APP_VERSION}`;
+  if (AMS_ROLES.includes(user?.role))
+    return `AMS Portal • Version ${APP_VERSION}`;
   if (isCrewUser(user)) return `Crew Portal • Version ${APP_VERSION}`;
   return `Version ${APP_VERSION}`;
 }
@@ -821,7 +992,9 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
   const email = normalizeEmail(profile?.email || authUser?.email || "");
   const existingUser =
     (state.users || []).find((user) => normalizeEmail(user.email) === email) ||
-    getAllUserPool(state).find((user) => normalizeEmail(user.email) === email) ||
+    getAllUserPool(state).find(
+      (user) => normalizeEmail(user.email) === email,
+    ) ||
     null;
   const role = getFirestoreRole(profile?.role);
   const displayRole = profile?.displayRole || role;
@@ -835,7 +1008,11 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
 
   return normalizeUser({
     ...(existingUser || {}),
-    id: existingUser?.id || profile?.id || authUser?.uid || createId("firebase-user"),
+    id:
+      existingUser?.id ||
+      profile?.id ||
+      authUser?.uid ||
+      createId("firebase-user"),
     name,
     email: profile?.email || email,
     password: existingUser?.password || "",
@@ -843,17 +1020,28 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
     displayRole,
     active: profile?.active ?? existingUser?.active ?? true,
     status: profile?.status || existingUser?.status || "active",
-    accessStatus: profile?.accessStatus || existingUser?.accessStatus || "Active",
+    accessStatus:
+      profile?.accessStatus || existingUser?.accessStatus || "Active",
     authStatus: profile?.authStatus || "Active",
     phone: profile?.phone || existingUser?.phone || "",
-    jobTitle: profile?.jobTitle || profile?.title || existingUser?.jobTitle || displayRole,
+    jobTitle:
+      profile?.jobTitle ||
+      profile?.title ||
+      existingUser?.jobTitle ||
+      displayRole,
     companyName:
       profile?.companyName ||
       profile?.company ||
       existingUser?.companyName ||
-      (role === ROLES.VENDOR ? "Crew Company" : "Advanced Maintenance Services"),
-    portal: profile?.portal || existingUser?.portal || getPortalPathForUser({ role }),
-    defaultPortal: profile?.defaultPortal || existingUser?.defaultPortal || getPortalPathForUser({ role }),
+      (role === ROLES.VENDOR
+        ? "Crew Company"
+        : "Advanced Maintenance Services"),
+    portal:
+      profile?.portal || existingUser?.portal || getPortalPathForUser({ role }),
+    defaultPortal:
+      profile?.defaultPortal ||
+      existingUser?.defaultPortal ||
+      getPortalPathForUser({ role }),
     streetAddress: profile?.streetAddress || existingUser?.streetAddress || "",
     city: profile?.city || existingUser?.city || "",
     state: profile?.state || existingUser?.state || "",
@@ -873,21 +1061,41 @@ function userCanManageUser(actor, target) {
   return target.role !== ROLES.OWNER;
 }
 
-function getSiteNeedsActionCount({ site, workOrders = [], jobs = [], invoices = [], proposals = [] }) {
+function getSiteNeedsActionCount({
+  site,
+  workOrders = [],
+  jobs = [],
+  invoices = [],
+  proposals = [],
+}) {
   if (!site) return 0;
-  const siteWorkOrders = workOrders.filter((workOrder) => workOrder.siteId === site.id);
+  const siteWorkOrders = workOrders.filter(
+    (workOrder) => workOrder.siteId === site.id,
+  );
   const siteJobs = jobs.filter((job) => job.siteId === site.id);
   const siteJobIds = new Set(siteJobs.map((job) => job.id));
 
   const proposalActions = proposals.filter((proposal) => {
-    const workOrder = workOrders.find((entry) => entry.id === proposal.workOrderId);
-    return workOrder?.siteId === site.id && proposal.isActivePath && ["submitted", "revision_requested"].includes(proposal.status);
+    const workOrder = workOrders.find(
+      (entry) => entry.id === proposal.workOrderId,
+    );
+    return (
+      workOrder?.siteId === site.id &&
+      proposal.isActivePath &&
+      ["submitted", "revision_requested"].includes(proposal.status)
+    );
   }).length;
   const workOrderActions = siteWorkOrders.filter((workOrder) =>
-    ["Needs Review", "Needs Attention", "Needs Vendor", "Open"].includes(workOrder.status)
+    ["Needs Review", "Needs Attention", "Needs Vendor", "Open"].includes(
+      workOrder.status,
+    ),
   ).length;
-  const invoiceActions = invoices.filter((invoice) =>
-    siteJobIds.has(invoice.jobId) && ["Submitted", "Rejected"].includes(normalizeInvoiceStatus(invoice.status))
+  const invoiceActions = invoices.filter(
+    (invoice) =>
+      siteJobIds.has(invoice.jobId) &&
+      ["Submitted", "Rejected"].includes(
+        normalizeInvoiceStatus(invoice.status),
+      ),
   ).length;
 
   return proposalActions + workOrderActions + invoiceActions;
@@ -896,8 +1104,12 @@ function getSiteNeedsActionCount({ site, workOrders = [], jobs = [], invoices = 
 function getBidCountForWorkOrder(proposals = [], workOrderId) {
   return new Set(
     proposals
-      .filter((proposal) => proposal.workOrderId === workOrderId && proposal.status !== "withdrawn")
-      .map((proposal) => proposal.vendorId)
+      .filter(
+        (proposal) =>
+          proposal.workOrderId === workOrderId &&
+          proposal.status !== "withdrawn",
+      )
+      .map((proposal) => proposal.vendorId),
   ).size;
 }
 
@@ -917,16 +1129,21 @@ function buildWeatherThreatSnapshot(sites = []) {
       statuses[index % statuses.length] === "active"
         ? "Crews should treat this site as currently impacted."
         : statuses[index % statuses.length] === "watch_24"
-        ? "Weather risk is expected inside the next 24 hours."
-        : statuses[index % statuses.length] === "watch_48"
-        ? "Weather risk is expected inside the next 48 hours."
-        : statuses[index % statuses.length] === "watch_72"
-        ? "Weather risk is expected inside the next 72 hours."
-        : "No active weather threat is currently projected.",
+          ? "Weather risk is expected inside the next 24 hours."
+          : statuses[index % statuses.length] === "watch_48"
+            ? "Weather risk is expected inside the next 48 hours."
+            : statuses[index % statuses.length] === "watch_72"
+              ? "Weather risk is expected inside the next 72 hours."
+              : "No active weather threat is currently projected.",
   }));
 }
 
-function buildInvoiceDownloadMarkup(invoice, amsProfile, workOrder, currentUser) {
+function buildInvoiceDownloadMarkup(
+  invoice,
+  amsProfile,
+  workOrder,
+  currentUser,
+) {
   const amsWorkOrderNumber = workOrder?.amsWorkOrderNumber || "N/A";
   const externalWorkOrderNumber = workOrder?.externalWorkOrderNumber || "N/A";
   const externalWorkOrderMarkup = canViewExternalWorkOrder(currentUser)
@@ -941,7 +1158,7 @@ function buildInvoiceDownloadMarkup(invoice, amsProfile, workOrder, currentUser)
           <td>${item.qty || ""}</td>
           <td>${formatMoney(item.rate || 0)}</td>
           <td>${formatMoney(item.amount || 0)}</td>
-        </tr>`
+        </tr>`,
     )
     .join("");
 
@@ -1014,7 +1231,11 @@ function statusClassName(value) {
 }
 
 function StatusBadge({ value, label }) {
-  return <span className={`status-pill ${statusClassName(value)}`}>{label || value}</span>;
+  return (
+    <span className={`status-pill ${statusClassName(value)}`}>
+      {label || value}
+    </span>
+  );
 }
 
 function WorkOrderStatusBadge({ workOrder }) {
@@ -1178,7 +1399,9 @@ function CostControl({
 }
 
 function AppBuild03() {
-  const [appState, setAppState] = useState(() => normalizeStateData(loadAppState()));
+  const [appState, setAppState] = useState(() =>
+    normalizeStateData(loadAppState()),
+  );
   const [showSplash, setShowSplash] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -1202,10 +1425,14 @@ function AppBuild03() {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [selectedCrewId, setSelectedCrewId] = useState(null);
   const [selectedCrewSiteId, setSelectedCrewSiteId] = useState(null);
-  const [selectedCrewOpportunityId, setSelectedCrewOpportunityId] = useState(null);
+  const [selectedCrewOpportunityId, setSelectedCrewOpportunityId] =
+    useState(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
   const [selectedTeamMemberId, setSelectedTeamMemberId] = useState(null);
-  const [reviewForm, setReviewForm] = useState({ reviewedPrice: "", amsNotes: "" });
+  const [reviewForm, setReviewForm] = useState({
+    reviewedPrice: "",
+    amsNotes: "",
+  });
   const [proposalSaveNotice, setProposalSaveNotice] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
   const [showProfilePassword, setShowProfilePassword] = useState(false);
@@ -1249,14 +1476,25 @@ function AppBuild03() {
     terms: "Net 30",
     notes: "",
     status: "Submitted",
-    lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
+    lineItems: [
+      {
+        id: "line-1",
+        service: "",
+        description: "",
+        qty: "1",
+        rate: "",
+        amount: "",
+      },
+    ],
   });
   const [jobSellDrafts, setJobSellDrafts] = useState({});
   const [accountingSellForm, setAccountingSellForm] = useState("");
   const [accountingCostForm, setAccountingCostForm] = useState("");
   const [editingJobSellId, setEditingJobSellId] = useState(null);
-  const [editingAccountingSellJobId, setEditingAccountingSellJobId] = useState(null);
-  const [editingAccountingCostJobId, setEditingAccountingCostJobId] = useState(null);
+  const [editingAccountingSellJobId, setEditingAccountingSellJobId] =
+    useState(null);
+  const [editingAccountingCostJobId, setEditingAccountingCostJobId] =
+    useState(null);
   const [dataRefreshLoading, setDataRefreshLoading] = useState(false);
   const [sellSaveNotice, setSellSaveNotice] = useState(null);
   const [weatherCommandState, setWeatherCommandState] = useState([]);
@@ -1322,7 +1560,11 @@ function AppBuild03() {
     externalWorkOrderNumber: "",
     requireBeforeAfterPhotos: false,
   });
-  const [jobCreateForm, setJobCreateForm] = useState({ workOrderId: "", vendorId: "", price: "" });
+  const [jobCreateForm, setJobCreateForm] = useState({
+    workOrderId: "",
+    vendorId: "",
+    price: "",
+  });
   const [jobAssignment, setJobAssignment] = useState({});
   const [editingSiteId, setEditingSiteId] = useState(null);
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -1372,7 +1614,9 @@ function AppBuild03() {
   useEffect(() => {
     const currentUserId = appState.ui?.currentUserId;
     if (!currentUserId) return;
-    const savedUser = getAllUserPool(appState).find((user) => user.id === currentUserId) || null;
+    const savedUser =
+      getAllUserPool(appState).find((user) => user.id === currentUserId) ||
+      null;
     if (!savedUser?.role) return;
     if (appState.ui?.activeScreenByRole?.[savedUser.role]) return;
 
@@ -1386,7 +1630,7 @@ function AppBuild03() {
             [savedUser.role]: "dashboard",
           },
         },
-      })
+      }),
     );
   }, [appState]);
 
@@ -1404,16 +1648,28 @@ function AppBuild03() {
   const isAmsViewer = isAmsUser(currentUser);
   const normalizedVendors = appState.vendors || [];
   const selectedSite =
-    appState.sites.find((site) => site.id === appState.ui.selectedSiteId) || appState.sites[0] || null;
+    appState.sites.find((site) => site.id === appState.ui.selectedSiteId) ||
+    appState.sites[0] ||
+    null;
   const currentCrewRecord = findCrewForUser(normalizedVendors, currentUser);
-  const currentCompanyProfile = getCompanyProfileForRole(appState, currentUser, currentCrewRecord);
+  const currentCompanyProfile = getCompanyProfileForRole(
+    appState,
+    currentUser,
+    currentCrewRecord,
+  );
   const selectedTeamMember =
     appState.users.find((user) => user.id === selectedTeamMemberId) || null;
-  const nextWorkOrderNumber = getNextAmsWorkOrderNumber(appState.workOrders || []);
+  const nextWorkOrderNumber = getNextAmsWorkOrderNumber(
+    appState.workOrders || [],
+  );
 
   const refreshFirestoreData = async ({ silent = false } = {}) => {
     if (!currentUser?.firebaseUid) {
-      if (!silent) showActionNotice("error", "Sign in with Firebase before refreshing live data.");
+      if (!silent)
+        showActionNotice(
+          "error",
+          "Sign in with Firebase before refreshing live data.",
+        );
       return false;
     }
 
@@ -1425,15 +1681,21 @@ function AppBuild03() {
     setProposalsLoading(true);
     setInvoicesLoading(true);
 
-    const [workOrdersResult, jobsResult, vendorsResult, sitesResult, proposalsResult, invoicesResult] =
-      await Promise.all([
-        loadFirestoreWorkOrders(),
-        loadFirestoreJobs(),
-        loadFirestoreVendors(),
-        loadFirestoreSites(),
-        loadFirestoreProposals(),
-        loadFirestoreInvoices(),
-      ]);
+    const [
+      workOrdersResult,
+      jobsResult,
+      vendorsResult,
+      sitesResult,
+      proposalsResult,
+      invoicesResult,
+    ] = await Promise.all([
+      loadFirestoreWorkOrders(),
+      loadFirestoreJobs(),
+      loadFirestoreVendors(),
+      loadFirestoreSites(),
+      loadFirestoreProposals(),
+      loadFirestoreInvoices(),
+    ]);
 
     setDataRefreshLoading(false);
     setWorkOrdersLoading(false);
@@ -1464,16 +1726,23 @@ function AppBuild03() {
 
     updateAppState((current) => ({
       ...current,
-      ...(workOrdersResult.error ? {} : { workOrders: workOrdersResult.workOrders }),
+      ...(workOrdersResult.error
+        ? {}
+        : { workOrders: workOrdersResult.workOrders }),
       ...(jobsResult.error ? {} : { jobs: jobsResult.jobs }),
       ...(vendorsResult.error ? {} : { vendors: vendorsResult.vendors }),
       ...(sitesResult.error ? {} : { sites: sitesResult.sites }),
-      ...(proposalsResult.error ? {} : { proposals: proposalsResult.proposals }),
+      ...(proposalsResult.error
+        ? {}
+        : { proposals: proposalsResult.proposals }),
       ...(invoicesResult.error ? {} : { invoices: invoicesResult.invoices }),
     }));
 
     if (errorMessages.length) {
-      showActionNotice("error", `Refresh completed with errors: ${errorMessages.join("; ")}`);
+      showActionNotice(
+        "error",
+        `Refresh completed with errors: ${errorMessages.join("; ")}`,
+      );
       return false;
     }
 
@@ -1723,7 +1992,11 @@ function AppBuild03() {
 
   const openScreen = (screen) => {
     if (!currentUser || screen === "logout") return;
-    if (!DRAWER_MENUS[currentUser.role]?.includes(screen) && screen !== "profile") return;
+    if (
+      !DRAWER_MENUS[currentUser.role]?.includes(screen) &&
+      screen !== "profile"
+    )
+      return;
     updateAppState((current) => ({
       ...current,
       ui: {
@@ -1832,7 +2105,8 @@ function AppBuild03() {
   };
 
   const showPlaceholder = (message) => window.alert(message);
-  const showActionNotice = (type, message) => setActionNotice({ type, message });
+  const showActionNotice = (type, message) =>
+    setActionNotice({ type, message });
 
   const selectWorkOrder = (workOrderId) => {
     if (!workOrderId) return;
@@ -1848,17 +2122,22 @@ function AppBuild03() {
 
     updateAppState((current) => {
       const upsertedUsers = current.users.some(
-        (user) => user.id === firebaseUser.id || normalizeEmail(user.email) === normalizeEmail(firebaseUser.email)
+        (user) =>
+          user.id === firebaseUser.id ||
+          normalizeEmail(user.email) === normalizeEmail(firebaseUser.email),
       )
         ? current.users.map((user) =>
-            user.id === firebaseUser.id || normalizeEmail(user.email) === normalizeEmail(firebaseUser.email)
+            user.id === firebaseUser.id ||
+            normalizeEmail(user.email) === normalizeEmail(firebaseUser.email)
               ? { ...user, ...firebaseUser, id: user.id }
-              : user
+              : user,
           )
         : [firebaseUser, ...current.users];
       const currentUserId =
-        upsertedUsers.find((user) => normalizeEmail(user.email) === normalizeEmail(firebaseUser.email))?.id ||
-        firebaseUser.id;
+        upsertedUsers.find(
+          (user) =>
+            normalizeEmail(user.email) === normalizeEmail(firebaseUser.email),
+        )?.id || firebaseUser.id;
 
       return {
         ...current,
@@ -1868,7 +2147,9 @@ function AppBuild03() {
           currentUserId,
           activeScreenByRole: {
             ...(current.ui?.activeScreenByRole || {}),
-            [firebaseUser.role]: current.ui?.activeScreenByRole?.[firebaseUser.role] || "dashboard",
+            [firebaseUser.role]:
+              current.ui?.activeScreenByRole?.[firebaseUser.role] ||
+              "dashboard",
           },
         },
       };
@@ -1879,7 +2160,12 @@ function AppBuild03() {
 
   const resolveFirebaseAppUser = async (authUser, stateSnapshot = appState) => {
     if (!authUser?.email) {
-      return { user: null, error: new Error("Authenticated Firebase user is missing an email address.") };
+      return {
+        user: null,
+        error: new Error(
+          "Authenticated Firebase user is missing an email address.",
+        ),
+      };
     }
 
     const ensuredProfile = await ensureFirestoreUserProfile(authUser);
@@ -1889,12 +2175,30 @@ function AppBuild03() {
 
     const profile = ensuredProfile.profile;
     if (!profile) {
-      return { user: null, error: new Error("Authenticated user was not found in the Firestore users collection.") };
+      return {
+        user: null,
+        error: new Error(
+          "Authenticated user was not found in the Firestore users collection.",
+        ),
+      };
     }
 
-    const resolvedUser = buildUserFromFirestoreProfile(profile, authUser, stateSnapshot);
-    if (![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(resolvedUser.role)) {
-      return { user: null, error: new Error("Your Firestore user role is not supported for this portal.") };
+    const resolvedUser = buildUserFromFirestoreProfile(
+      profile,
+      authUser,
+      stateSnapshot,
+    );
+    if (
+      ![ROLES.AMS_ADMIN, ROLES.VENDOR, ROLES.OWNER, ROLES.AMS_MANAGER].includes(
+        resolvedUser.role,
+      )
+    ) {
+      return {
+        user: null,
+        error: new Error(
+          "Your Firestore user role is not supported for this portal.",
+        ),
+      };
     }
 
     return { user: resolvedUser, error: null };
@@ -1910,7 +2214,10 @@ function AppBuild03() {
       return false;
     }
 
-    const resolvedUserResult = await resolveFirebaseAppUser(firebaseResult.user, appState);
+    const resolvedUserResult = await resolveFirebaseAppUser(
+      firebaseResult.user,
+      appState,
+    );
     if (resolvedUserResult.error) {
       await signOutUser();
       setLoginLoading(false);
@@ -1925,7 +2232,8 @@ function AppBuild03() {
 
   const handleDemoLogin = async (type) => {
     setLoginError("");
-    const demoEmail = type === "ams" ? "amsdemo@amsdemo.local" : "crewdemo@amsdemo.local";
+    const demoEmail =
+      type === "ams" ? "amsdemo@amsdemo.local" : "crewdemo@amsdemo.local";
     const demoPassword = type === "ams" ? "DemoAMS123" : "DemoCrew123";
     const signedIn = await handleLogin(demoEmail, demoPassword);
 
@@ -1938,7 +2246,7 @@ function AppBuild03() {
         "info",
         type === "ams"
           ? "AMS Demo started in local demo mode. Firestore operational data remains available only to authenticated Firebase users."
-          : "Crew Demo started in local demo mode. Use a real Crew login linked to a Firestore vendor profile to view live available work."
+          : "Crew Demo started in local demo mode. Use a real Crew login linked to a Firestore vendor profile to view live available work.",
       );
     }
   };
@@ -1960,7 +2268,10 @@ function AppBuild03() {
         return;
       }
 
-      const resolvedUserResult = await resolveFirebaseAppUser(firebaseUser, appState);
+      const resolvedUserResult = await resolveFirebaseAppUser(
+        firebaseUser,
+        appState,
+      );
       if (!active) return;
 
       if (resolvedUserResult.error) {
@@ -1999,53 +2310,82 @@ function AppBuild03() {
   };
 
   const saveSite = async () => {
-    if (!siteForm.name.trim() || !siteForm.streetAddress.trim() || !siteForm.city.trim() || !siteForm.state.trim()) {
+    if (
+      !siteForm.name.trim() ||
+      !siteForm.streetAddress.trim() ||
+      !siteForm.city.trim() ||
+      !siteForm.state.trim()
+    ) {
       window.alert("Site name, street address, city, and state are required.");
       return;
     }
 
-    const assignedVendor = normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId);
+    const assignedVendor = normalizedVendors.find(
+      (vendor) => vendor.id === siteForm.assignedVendorId,
+    );
     const assignedCrewContact =
       appState.users.find(
-        (user) => user.id === siteForm.assignedCrewContactId && isCrewRole(user.role)
+        (user) =>
+          user.id === siteForm.assignedCrewContactId && isCrewRole(user.role),
       ) || null;
     const siteRecord = {
       ...siteForm,
       state: siteForm.state.toUpperCase(),
       assignedVendorId: siteForm.assignedVendorId || "",
-      assignedVendorName: assignedVendor?.companyName || assignedVendor?.name || "",
+      assignedVendorName:
+        assignedVendor?.companyName || assignedVendor?.name || "",
       assignedCrewContactId: siteForm.assignedCrewContactId || "",
       assignedCrewContactName: assignedCrewContact?.name || "",
       address: buildAddressLine(siteForm),
       siteMapStatus: "Upload Coming Soon",
       geoFenceStatus: "Geo Fence Setup Coming Soon",
-      createdAt: appState.sites.find((site) => site.id === editingSiteId)?.createdAt || new Date().toISOString(),
+      createdAt:
+        appState.sites.find((site) => site.id === editingSiteId)?.createdAt ||
+        new Date().toISOString(),
       createdBy: currentUser?.email || currentUser?.name || "",
     };
 
     try {
-      let savedSite = editingSiteId ? { id: editingSiteId, ...siteRecord } : { id: createId("site"), ...siteRecord };
+      let savedSite = editingSiteId
+        ? { id: editingSiteId, ...siteRecord }
+        : { id: createId("site"), ...siteRecord };
 
       if (currentUser?.firebaseUid) {
         const result = editingSiteId
-          ? await updateFirestoreSite(appState.sites.find((site) => site.id === editingSiteId)?.firestoreId || editingSiteId, siteRecord)
+          ? await updateFirestoreSite(
+              appState.sites.find((site) => site.id === editingSiteId)
+                ?.firestoreId || editingSiteId,
+              siteRecord,
+            )
           : await createFirestoreSite(siteRecord);
         if (result.error) throw result.error;
-        if (!result.site?.id) throw new Error("Site save did not return a Firestore ID.");
+        if (!result.site?.id)
+          throw new Error("Site save did not return a Firestore ID.");
         savedSite = result.site;
       }
 
       updateAppState((current) => ({
         ...current,
         sites: editingSiteId
-          ? current.sites.map((site) => (site.id === editingSiteId ? { ...site, ...savedSite } : site))
-          : [savedSite, ...current.sites.filter((site) => site.id !== savedSite.id)],
+          ? current.sites.map((site) =>
+              site.id === editingSiteId ? { ...site, ...savedSite } : site,
+            )
+          : [
+              savedSite,
+              ...current.sites.filter((site) => site.id !== savedSite.id),
+            ],
       }));
 
       setSelectedSite(savedSite.id);
-      showActionNotice("success", editingSiteId ? "Site updated." : "Site created in Firestore.");
+      showActionNotice(
+        "success",
+        editingSiteId ? "Site updated." : "Site created in Firestore.",
+      );
     } catch (error) {
-      showActionNotice("error", `Site was not saved: ${getFirebaseErrorMessage(error)}`);
+      showActionNotice(
+        "error",
+        `Site was not saved: ${getFirebaseErrorMessage(error)}`,
+      );
       return;
     }
 
@@ -2082,14 +2422,19 @@ function AppBuild03() {
     const targetSite = appState.sites.find((site) => site.id === siteId);
     if (!targetSite) return;
     const confirmed = window.confirm(
-      `Remove ${targetSite.name || "this site"}? Existing work orders and jobs will remain in Firestore history.`
+      `Remove ${targetSite.name || "this site"}? Existing work orders and jobs will remain in Firestore history.`,
     );
     if (!confirmed) return;
 
     if (currentUser?.firebaseUid) {
-      const result = await deleteFirestoreSite(targetSite.firestoreId || targetSite.id);
+      const result = await deleteFirestoreSite(
+        targetSite.firestoreId || targetSite.id,
+      );
       if (result.error) {
-        showActionNotice("error", `Site was not removed: ${getFirebaseErrorMessage(result.error)}`);
+        showActionNotice(
+          "error",
+          `Site was not removed: ${getFirebaseErrorMessage(result.error)}`,
+        );
         return;
       }
     }
@@ -2140,20 +2485,29 @@ function AppBuild03() {
 
       const existingSiteNumbers = new Set(
         appState.sites
-          .map((site) => String(site.siteNumber || "").trim().toLowerCase())
-          .filter(Boolean)
+          .map((site) =>
+            String(site.siteNumber || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean),
       );
 
       const rows = result.rows.map((row) => {
-        const siteNumber = String(row.site.siteNumber || "").trim().toLowerCase();
+        const siteNumber = String(row.site.siteNumber || "")
+          .trim()
+          .toLowerCase();
         if (!siteNumber || !existingSiteNumbers.has(siteNumber)) return row;
-        const errors = [...row.errors, "siteNumber already exists in Firestore"];
+        const errors = [
+          ...row.errors,
+          "siteNumber already exists in Firestore",
+        ];
         return { ...row, valid: false, errors };
       });
 
       setSiteImportRows(rows);
       setSiteImportSummary(
-        `${rows.filter((row) => row.valid).length} valid row(s), ${rows.filter((row) => !row.valid).length} row(s) need attention.`
+        `${rows.filter((row) => row.valid).length} valid row(s), ${rows.filter((row) => !row.valid).length} row(s) need attention.`,
       );
     } catch (error) {
       setSiteImportError(error?.message || "Site upload could not be parsed.");
@@ -2165,7 +2519,9 @@ function AppBuild03() {
 
   const confirmSiteImport = async () => {
     if (!currentUser?.firebaseUid) {
-      setSiteImportError("Site imports require a Firebase-authenticated AMS session.");
+      setSiteImportError(
+        "Site imports require a Firebase-authenticated AMS session.",
+      );
       return;
     }
 
@@ -2177,7 +2533,9 @@ function AppBuild03() {
 
     const validRows = siteImportRows.filter((row) => row.valid);
     if (!validRows.length) {
-      setSiteImportError("Upload and preview valid site rows before importing.");
+      setSiteImportError(
+        "Upload and preview valid site rows before importing.",
+      );
       return;
     }
 
@@ -2212,7 +2570,9 @@ function AppBuild03() {
     setSiteImportLoading(false);
 
     if (result.error) {
-      setSiteImportError(`Site import failed: ${getFirebaseErrorMessage(result.error)}`);
+      setSiteImportError(
+        `Site import failed: ${getFirebaseErrorMessage(result.error)}`,
+      );
       setSiteImportSummary(`0 imported, ${validRows.length} failed.`);
       return;
     }
@@ -2221,19 +2581,30 @@ function AppBuild03() {
       ...current,
       sites: [
         ...result.sites,
-        ...current.sites.filter((site) => !result.sites.some((created) => created.id === site.id)),
+        ...current.sites.filter(
+          (site) => !result.sites.some((created) => created.id === site.id),
+        ),
       ],
     }));
 
     if (result.sites[0]?.id) setSelectedSite(result.sites[0].id);
     setSiteImportRows([]);
     setSiteImportSummary(`${result.sites.length} imported, 0 failed.`);
-    showActionNotice("success", `${result.sites.length} site${result.sites.length === 1 ? "" : "s"} imported.`);
+    showActionNotice(
+      "success",
+      `${result.sites.length} site${result.sites.length === 1 ? "" : "s"} imported.`,
+    );
   };
 
   const saveVendor = async () => {
-    if (!vendorForm.companyName.trim() || !vendorForm.email.trim() || !vendorForm.serviceType) {
-      window.alert("Company name, email, and primary service type are required.");
+    if (
+      !vendorForm.companyName.trim() ||
+      !vendorForm.email.trim() ||
+      !vendorForm.serviceType
+    ) {
+      window.alert(
+        "Company name, email, and primary service type are required.",
+      );
       return;
     }
 
@@ -2245,10 +2616,13 @@ function AppBuild03() {
       .split(",")
       .map((value) => value.trim().toUpperCase())
       .filter(Boolean);
-    const existingVendor = normalizedVendors.find((vendor) => vendor.id === editingVendorId);
+    const existingVendor = normalizedVendors.find(
+      (vendor) => vendor.id === editingVendorId,
+    );
     const existingCrewUser =
       appState.users.find((user) => user.id === existingVendor?.userId) || null;
-    const password = vendorForm.password || existingCrewUser?.password || "Crew123";
+    const password =
+      vendorForm.password || existingCrewUser?.password || "Crew123";
 
     const vendorRecord = {
       name: vendorForm.companyName.trim(),
@@ -2262,7 +2636,9 @@ function AppBuild03() {
       email: vendorForm.email.trim(),
       userEmail: vendorForm.email.trim(),
       serviceType: vendorForm.serviceType,
-      serviceTypes: parsedServiceTypes.length ? parsedServiceTypes : [vendorForm.serviceType],
+      serviceTypes: parsedServiceTypes.length
+        ? parsedServiceTypes
+        : [vendorForm.serviceType],
       states: parsedStates,
       userId: existingVendor?.userId || "",
       internalNotes: vendorForm.internalNotes.trim(),
@@ -2276,54 +2652,70 @@ function AppBuild03() {
 
     try {
       let savedVendor = editingVendorId
-        ? { ...existingVendor, ...vendorRecord, id: editingVendorId, active: existingVendor?.active ?? true }
+        ? {
+            ...existingVendor,
+            ...vendorRecord,
+            id: editingVendorId,
+            active: existingVendor?.active ?? true,
+          }
         : { id: createId("vendor"), active: true, ...vendorRecord };
 
       if (currentUser?.firebaseUid) {
         const result = editingVendorId
-          ? await updateFirestoreVendor(existingVendor?.firestoreId || editingVendorId, {
+          ? await updateFirestoreVendor(
+              existingVendor?.firestoreId || editingVendorId,
+              {
+                ...vendorRecord,
+                active: existingVendor?.active ?? true,
+                status:
+                  existingVendor?.active === false ? "inactive" : "active",
+              },
+            )
+          : await createFirestoreVendor({
               ...vendorRecord,
-              active: existingVendor?.active ?? true,
-              status: existingVendor?.active === false ? "inactive" : "active",
-            })
-          : await createFirestoreVendor({ ...vendorRecord, active: true, status: "active" });
+              active: true,
+              status: "active",
+            });
         if (result.error) throw result.error;
-        if (!result.vendor?.id) throw new Error("Vendor save did not return a Firestore ID.");
+        if (!result.vendor?.id)
+          throw new Error("Vendor save did not return a Firestore ID.");
         savedVendor = result.vendor;
       }
 
       const upsertCrewUser = (users, vendorUserId) => {
-      const nextUserId = vendorUserId || createId("user");
-      const linkedUser = {
-        id: nextUserId,
-        active: true,
-        role: ROLES.CREW,
-        name: vendorRecord.contactName || vendorRecord.companyName,
-        email: vendorRecord.email,
-        password,
-        phone: vendorRecord.phone,
-        jobTitle: "Crew Contact",
-        companyName: vendorRecord.companyName,
-        streetAddress: vendorRecord.streetAddress,
-        city: vendorRecord.city,
-        state: vendorRecord.state,
-        zip: vendorRecord.zip,
-        internalNotes: vendorRecord.internalNotes,
-        profilePhotoStatus: "Photo Upload Coming Soon",
-        address: vendorRecord.address,
-      };
-
-      if (vendorUserId && users.some((user) => user.id === vendorUserId)) {
-        return {
-          userId: vendorUserId,
-          users: users.map((user) => (user.id === vendorUserId ? { ...user, ...linkedUser } : user)),
+        const nextUserId = vendorUserId || createId("user");
+        const linkedUser = {
+          id: nextUserId,
+          active: true,
+          role: ROLES.CREW,
+          name: vendorRecord.contactName || vendorRecord.companyName,
+          email: vendorRecord.email,
+          password,
+          phone: vendorRecord.phone,
+          jobTitle: "Crew Contact",
+          companyName: vendorRecord.companyName,
+          streetAddress: vendorRecord.streetAddress,
+          city: vendorRecord.city,
+          state: vendorRecord.state,
+          zip: vendorRecord.zip,
+          internalNotes: vendorRecord.internalNotes,
+          profilePhotoStatus: "Photo Upload Coming Soon",
+          address: vendorRecord.address,
         };
-      }
 
-      return {
-        userId: nextUserId,
-        users: [{ ...linkedUser }, ...users],
-      };
+        if (vendorUserId && users.some((user) => user.id === vendorUserId)) {
+          return {
+            userId: vendorUserId,
+            users: users.map((user) =>
+              user.id === vendorUserId ? { ...user, ...linkedUser } : user,
+            ),
+          };
+        }
+
+        return {
+          userId: nextUserId,
+          users: [{ ...linkedUser }, ...users],
+        };
       };
 
       updateAppState((current) => {
@@ -2337,10 +2729,21 @@ function AppBuild03() {
           vendors: editingVendorId
             ? current.vendors.map((vendor) =>
                 vendor.id === editingVendorId
-                  ? { ...vendor, ...savedVendor, userId: linkedUserUpdate.userId || savedVendor.userId || "" }
-                  : vendor
+                  ? {
+                      ...vendor,
+                      ...savedVendor,
+                      userId:
+                        linkedUserUpdate.userId || savedVendor.userId || "",
+                    }
+                  : vendor,
               )
-            : [{ ...savedVendor, userId: linkedUserUpdate.userId || savedVendor.userId || "" }, ...current.vendors],
+            : [
+                {
+                  ...savedVendor,
+                  userId: linkedUserUpdate.userId || savedVendor.userId || "",
+                },
+                ...current.vendors,
+              ],
           companyProfiles: {
             ...(current.companyProfiles || {}),
             vendors: {
@@ -2360,9 +2763,15 @@ function AppBuild03() {
           },
         };
       });
-      showActionNotice("success", editingVendorId ? "Vendor updated." : "Vendor created in Firestore.");
+      showActionNotice(
+        "success",
+        editingVendorId ? "Vendor updated." : "Vendor created in Firestore.",
+      );
     } catch (error) {
-      showActionNotice("error", `Vendor was not saved: ${getFirebaseErrorMessage(error)}`);
+      showActionNotice(
+        "error",
+        `Vendor was not saved: ${getFirebaseErrorMessage(error)}`,
+      );
       return;
     }
 
@@ -2410,30 +2819,41 @@ function AppBuild03() {
     updateAppState((current) => ({
       ...current,
       vendors: current.vendors.map((vendor) =>
-        vendor.id === vendorId ? { ...vendor, active: !vendor.active } : vendor
+        vendor.id === vendorId ? { ...vendor, active: !vendor.active } : vendor,
       ),
     }));
   };
 
   const removeVendor = async (vendorId) => {
-    const targetVendor = normalizedVendors.find((vendor) => vendor.id === vendorId);
+    const targetVendor = normalizedVendors.find(
+      (vendor) => vendor.id === vendorId,
+    );
     if (!targetVendor) return;
-    const relatedJobs = appState.jobs.filter((job) => job.vendorId === vendorId || job.assignedVendorId === vendorId);
+    const relatedJobs = appState.jobs.filter(
+      (job) => job.vendorId === vendorId || job.assignedVendorId === vendorId,
+    );
     const confirmed = window.confirm(
-      `Remove ${targetVendor.companyName || targetVendor.name || "this vendor"}? ${relatedJobs.length ? "Existing job history will remain linked by vendor ID." : "This removes the vendor record."}`
+      `Remove ${targetVendor.companyName || targetVendor.name || "this vendor"}? ${relatedJobs.length ? "Existing job history will remain linked by vendor ID." : "This removes the vendor record."}`,
     );
     if (!confirmed) return;
 
     if (currentUser?.firebaseUid) {
-      const result = await deleteFirestoreVendor(targetVendor.firestoreId || targetVendor.id);
+      const result = await deleteFirestoreVendor(
+        targetVendor.firestoreId || targetVendor.id,
+      );
       if (result.error) {
-        showActionNotice("error", `Vendor was not removed: ${getFirebaseErrorMessage(result.error)}`);
+        showActionNotice(
+          "error",
+          `Vendor was not removed: ${getFirebaseErrorMessage(result.error)}`,
+        );
         return;
       }
     }
 
     updateAppState((current) => {
-      const nextCompanyProfiles = { ...(current.companyProfiles?.vendors || {}) };
+      const nextCompanyProfiles = {
+        ...(current.companyProfiles?.vendors || {}),
+      };
       delete nextCompanyProfiles[vendorId];
       return {
         ...current,
@@ -2445,11 +2865,18 @@ function AppBuild03() {
       };
     });
     setSelectedCrewId((current) => (current === vendorId ? null : current));
-    showActionNotice("success", `${targetVendor.companyName || targetVendor.name || "Vendor"} removed.`);
+    showActionNotice(
+      "success",
+      `${targetVendor.companyName || targetVendor.name || "Vendor"} removed.`,
+    );
   };
 
   const saveUser = () => {
-    if (!userForm.name.trim() || !userForm.email.trim() || !userForm.password.trim()) {
+    if (
+      !userForm.name.trim() ||
+      !userForm.email.trim() ||
+      !userForm.password.trim()
+    ) {
       window.alert("Name, email, and password are required.");
       return;
     }
@@ -2482,13 +2909,16 @@ function AppBuild03() {
       updateAppState((current) => ({
         ...current,
         users: current.users.map((user) =>
-          user.id === editingUserId ? { ...user, ...userRecord } : user
+          user.id === editingUserId ? { ...user, ...userRecord } : user,
         ),
       }));
     } else {
       updateAppState((current) => ({
         ...current,
-        users: [{ id: nextUserId, active: true, ...userRecord }, ...current.users],
+        users: [
+          { id: nextUserId, active: true, ...userRecord },
+          ...current.users,
+        ],
       }));
     }
 
@@ -2546,7 +2976,7 @@ function AppBuild03() {
               accessStatus: user.active ? "Inactive" : "Active",
               authStatus: user.active ? "Disabled" : "Active",
             }
-          : user
+          : user,
       ),
     }));
   };
@@ -2565,7 +2995,7 @@ function AppBuild03() {
               authStatus: "Disabled",
               archivedAt: new Date().toISOString(),
             }
-          : user
+          : user,
       ),
     }));
   };
@@ -2574,7 +3004,7 @@ function AppBuild03() {
     const targetUser = appState.users.find((user) => user.id === userId);
     if (!userCanManageUser(currentUser, targetUser)) return;
     const confirmed = window.confirm(
-      `Delete ${targetUser?.name || "this user"}? This will remove the local operational record and should only be used when you are sure.`
+      `Delete ${targetUser?.name || "this user"}? This will remove the local operational record and should only be used when you are sure.`,
     );
     if (!confirmed) return;
 
@@ -2583,7 +3013,10 @@ function AppBuild03() {
       users: current.users.filter((user) => user.id !== userId),
       ui: {
         ...current.ui,
-        currentUserId: current.ui?.currentUserId === userId ? null : current.ui?.currentUserId || null,
+        currentUserId:
+          current.ui?.currentUserId === userId
+            ? null
+            : current.ui?.currentUserId || null,
       },
     }));
   };
@@ -2592,19 +3025,30 @@ function AppBuild03() {
       window.alert("Site and description are required.");
       return;
     }
-    if (workOrderForm.workType === "recurring" && !workOrderForm.recurringFrequency) {
-      window.alert("Select a recurring frequency before creating this work order.");
+    if (
+      workOrderForm.workType === "recurring" &&
+      !workOrderForm.recurringFrequency
+    ) {
+      window.alert(
+        "Select a recurring frequency before creating this work order.",
+      );
       return;
     }
     if (
       workOrderForm.workType === "seasonal" &&
-      (!workOrderForm.seasonStart || !workOrderForm.seasonEnd || !workOrderForm.seasonalServiceType)
+      (!workOrderForm.seasonStart ||
+        !workOrderForm.seasonEnd ||
+        !workOrderForm.seasonalServiceType)
     ) {
-      window.alert("Seasonal work orders need a season start, season end, and service type.");
+      window.alert(
+        "Seasonal work orders need a season start, season end, and service type.",
+      );
       return;
     }
 
-    const site = appState.sites.find((entry) => entry.id === workOrderForm.siteId);
+    const site = appState.sites.find(
+      (entry) => entry.id === workOrderForm.siteId,
+    );
     if (!site) {
       window.alert("Selected site was not found.");
       return;
@@ -2612,10 +3056,16 @@ function AppBuild03() {
 
     const directVendor =
       workOrderForm.workflowType === "direct" && workOrderForm.directVendorId
-        ? normalizedVendors.find((vendor) => vendor.id === workOrderForm.directVendorId)
+        ? normalizedVendors.find(
+            (vendor) => vendor.id === workOrderForm.directVendorId,
+          )
         : null;
 
-    if (workOrderForm.workflowType === "direct" && workOrderForm.directVendorId && !directVendor) {
+    if (
+      workOrderForm.workflowType === "direct" &&
+      workOrderForm.directVendorId &&
+      !directVendor
+    ) {
       window.alert("Selected crew was not found.");
       return;
     }
@@ -2624,7 +3074,8 @@ function AppBuild03() {
     const proposalRequired = workOrderForm.workflowType === "proposal";
     const workType = workOrderForm.workType || "one_time";
     const directVendorCost = String(workOrderForm.vendorCost || "").trim();
-    const serviceType = normalizeServiceType(workOrderForm.serviceType) || "General Maintenance";
+    const serviceType =
+      normalizeServiceType(workOrderForm.serviceType) || "General Maintenance";
     const record = {
       id: createId("wo"),
       title: `${serviceType} - ${site.name}`,
@@ -2636,25 +3087,39 @@ function AppBuild03() {
       priority: "Normal",
       description: workOrderForm.description.trim(),
       serviceType,
-      status: directVendor ? "Assigned" : proposalRequired ? "Open" : "Needs Review",
+      status: directVendor
+        ? "Assigned"
+        : proposalRequired
+          ? "Open"
+          : "Needs Review",
       proposalRequired,
       proposalState: proposalRequired ? "opportunity" : "none",
       proposalRequestedAt: proposalRequired ? createdAt : "",
       proposalAwardedAt: "",
       assignedVendorId: directVendor?.id || "",
-      assignedVendorName: directVendor ? directVendor.companyName || directVendor.name : "",
+      assignedVendorName: directVendor
+        ? directVendor.companyName || directVendor.name
+        : "",
       jobId: "",
       requireBeforeAfterPhotos: Boolean(workOrderForm.requireBeforeAfterPhotos),
       workType,
-      recurringFrequency: workType === "recurring" ? workOrderForm.recurringFrequency : "",
+      recurringFrequency:
+        workType === "recurring" ? workOrderForm.recurringFrequency : "",
       recurringVendorCost:
-        workType === "recurring" ? String(workOrderForm.recurringVendorCost || "").trim() : "",
+        workType === "recurring"
+          ? String(workOrderForm.recurringVendorCost || "").trim()
+          : "",
       vendorCost: directVendorCost,
       recurringPricingNotes:
-        workType === "recurring" ? String(workOrderForm.recurringPricingNotes || "").trim() : "",
+        workType === "recurring"
+          ? String(workOrderForm.recurringPricingNotes || "").trim()
+          : "",
       seasonStart: workType === "seasonal" ? workOrderForm.seasonStart : "",
       seasonEnd: workType === "seasonal" ? workOrderForm.seasonEnd : "",
-      seasonalServiceType: workType === "seasonal" ? normalizeServiceType(workOrderForm.seasonalServiceType) : "",
+      seasonalServiceType:
+        workType === "seasonal"
+          ? normalizeServiceType(workOrderForm.seasonalServiceType)
+          : "",
       createdAt,
       createdBy: currentUser?.email || currentUser?.name || "",
     };
@@ -2666,7 +3131,8 @@ function AppBuild03() {
       if (currentUser?.firebaseUid) {
         const workOrderResult = await createFirestoreWorkOrder(record);
         if (workOrderResult.error) throw workOrderResult.error;
-        if (!workOrderResult.workOrder?.id) throw new Error("Work order creation did not return a Firestore ID.");
+        if (!workOrderResult.workOrder?.id)
+          throw new Error("Work order creation did not return a Firestore ID.");
         savedWorkOrder = {
           ...workOrderResult.workOrder,
           proposalState: proposalRequired ? "opportunity" : "none",
@@ -2682,20 +3148,40 @@ function AppBuild03() {
           });
           if (jobResult.error) throw jobResult.error;
           createdJob = jobResult.job;
-          savedWorkOrder = { ...savedWorkOrder, jobId: jobResult.jobId || createdJob?.id || "" };
+          savedWorkOrder = {
+            ...savedWorkOrder,
+            jobId: jobResult.jobId || createdJob?.id || "",
+          };
         }
       } else if (directVendor) {
-        createdJob = buildJobRecord({ workOrder: record, vendor: directVendor, price: directVendorCost, currentUser });
+        createdJob = buildJobRecord({
+          workOrder: record,
+          vendor: directVendor,
+          price: directVendorCost,
+          currentUser,
+        });
         savedWorkOrder = { ...record, jobId: createdJob.id };
       }
 
       updateAppState((current) => ({
         ...current,
-        workOrders: [savedWorkOrder, ...current.workOrders.filter((workOrder) => workOrder.id !== savedWorkOrder.id)],
+        workOrders: [
+          savedWorkOrder,
+          ...current.workOrders.filter(
+            (workOrder) => workOrder.id !== savedWorkOrder.id,
+          ),
+        ],
         jobs: createdJob
           ? current.jobs.some((job) => job.id === createdJob.id)
-            ? current.jobs.map((job) => (job.id === createdJob.id ? { ...job, ...createdJob } : job))
-            : [createdJob, ...current.jobs.filter((job) => job.workOrderId !== savedWorkOrder.id)]
+            ? current.jobs.map((job) =>
+                job.id === createdJob.id ? { ...job, ...createdJob } : job,
+              )
+            : [
+                createdJob,
+                ...current.jobs.filter(
+                  (job) => job.workOrderId !== savedWorkOrder.id,
+                ),
+              ]
           : current.jobs,
       }));
 
@@ -2719,9 +3205,17 @@ function AppBuild03() {
         recurringPricingNotes: "",
       });
       closeModal();
-      showActionNotice("success", directVendor ? "Work order created and job assigned." : "Work order created.");
+      showActionNotice(
+        "success",
+        directVendor
+          ? "Work order created and job assigned."
+          : "Work order created.",
+      );
     } catch (error) {
-      showActionNotice("error", `Work order was not created: ${getFirebaseErrorMessage(error)}`);
+      showActionNotice(
+        "error",
+        `Work order was not created: ${getFirebaseErrorMessage(error)}`,
+      );
     }
   };
 
@@ -2737,26 +3231,33 @@ function AppBuild03() {
         workOrder.id === targetWorkOrderId
           ? {
               ...workOrder,
-              externalWorkOrderNumber: workOrderDetailForm.externalWorkOrderNumber,
-              requireBeforeAfterPhotos: workOrderDetailForm.requireBeforeAfterPhotos,
+              externalWorkOrderNumber:
+                workOrderDetailForm.externalWorkOrderNumber,
+              requireBeforeAfterPhotos:
+                workOrderDetailForm.requireBeforeAfterPhotos,
               recurringVendorCost:
                 workOrder.workType === "recurring"
                   ? String(workOrderDetailForm.recurringVendorCost || "").trim()
-                  : workOrder.recurringVendorCost ?? "",
+                  : (workOrder.recurringVendorCost ?? ""),
               recurringPricingNotes:
                 workOrder.workType === "recurring"
-                  ? String(workOrderDetailForm.recurringPricingNotes || "").trim()
+                  ? String(
+                      workOrderDetailForm.recurringPricingNotes || "",
+                    ).trim()
                   : workOrder.recurringPricingNotes || "",
             }
-          : workOrder
+          : workOrder,
       ),
     }));
     showActionNotice("success", "Work order details saved.");
   };
 
   const assignVendorToWorkOrder = async (workOrderId) => {
-    const workOrder = appState.workOrders.find((entry) => entry.id === workOrderId);
-    const vendorId = jobAssignment[workOrderId] || workOrder?.assignedVendorId || "";
+    const workOrder = appState.workOrders.find(
+      (entry) => entry.id === workOrderId,
+    );
+    const vendorId =
+      jobAssignment[workOrderId] || workOrder?.assignedVendorId || "";
     if (!vendorId) {
       window.alert("Choose a crew before assigning a job.");
       return;
@@ -2766,12 +3267,15 @@ function AppBuild03() {
     if (!workOrder || !vendor) return;
 
     if (workOrder.proposalRequired) {
-      window.alert("Proposal work orders must be awarded through proposal review.");
+      window.alert(
+        "Proposal work orders must be awarded through proposal review.",
+      );
       return;
     }
 
     try {
-      let newJob = appState.jobs.find((job) => job.workOrderId === workOrderId) || null;
+      let newJob =
+        appState.jobs.find((job) => job.workOrderId === workOrderId) || null;
       let jobAlreadyExisted = Boolean(newJob);
 
       if (currentUser?.firebaseUid) {
@@ -2786,7 +3290,12 @@ function AppBuild03() {
         newJob = result.job;
         jobAlreadyExisted = Boolean(result.jobAlreadyExisted);
       } else if (!newJob) {
-        newJob = buildJobRecord({ workOrder, vendor, price: workOrder.vendorCost || workOrder.recurringVendorCost || "", currentUser });
+        newJob = buildJobRecord({
+          workOrder,
+          vendor,
+          price: workOrder.vendorCost || workOrder.recurringVendorCost || "",
+          currentUser,
+        });
       }
 
       if (!newJob?.id) throw new Error("Job creation did not return a job ID.");
@@ -2794,8 +3303,13 @@ function AppBuild03() {
       updateAppState((current) => ({
         ...current,
         jobs: current.jobs.some((job) => job.id === newJob.id)
-          ? current.jobs.map((job) => (job.id === newJob.id ? { ...job, ...newJob } : job))
-          : [newJob, ...current.jobs.filter((job) => job.workOrderId !== workOrderId)],
+          ? current.jobs.map((job) =>
+              job.id === newJob.id ? { ...job, ...newJob } : job,
+            )
+          : [
+              newJob,
+              ...current.jobs.filter((job) => job.workOrderId !== workOrderId),
+            ],
         workOrders: current.workOrders.map((entry) =>
           entry.id === workOrderId
             ? {
@@ -2806,22 +3320,30 @@ function AppBuild03() {
                 jobId: newJob.id,
                 proposalRequired: false,
               }
-            : entry
+            : entry,
         ),
       }));
       setSelectedJobId(newJob.id);
       showActionNotice(
         "success",
-        jobAlreadyExisted ? "Existing job linked to this work order." : "Job created and assigned."
+        jobAlreadyExisted
+          ? "Existing job linked to this work order."
+          : "Job created and assigned.",
       );
     } catch (error) {
-      showActionNotice("error", `Job was not created: ${getFirebaseErrorMessage(error)}`);
+      showActionNotice(
+        "error",
+        `Job was not created: ${getFirebaseErrorMessage(error)}`,
+      );
     }
   };
 
   const createManualJob = async () => {
-    const workOrder = appState.workOrders.find((entry) => entry.id === jobCreateForm.workOrderId);
-    const vendorId = jobCreateForm.vendorId || workOrder?.assignedVendorId || "";
+    const workOrder = appState.workOrders.find(
+      (entry) => entry.id === jobCreateForm.workOrderId,
+    );
+    const vendorId =
+      jobCreateForm.vendorId || workOrder?.assignedVendorId || "";
     const vendor = normalizedVendors.find((entry) => entry.id === vendorId);
     if (!workOrder || !vendor) {
       window.alert("Choose a work order and crew.");
@@ -2829,7 +3351,8 @@ function AppBuild03() {
     }
 
     try {
-      let newJob = appState.jobs.find((job) => job.workOrderId === workOrder.id) || null;
+      let newJob =
+        appState.jobs.find((job) => job.workOrderId === workOrder.id) || null;
       let jobAlreadyExisted = Boolean(newJob);
 
       if (currentUser?.firebaseUid) {
@@ -2844,7 +3367,12 @@ function AppBuild03() {
         newJob = result.job;
         jobAlreadyExisted = Boolean(result.jobAlreadyExisted);
       } else if (!newJob) {
-        newJob = buildJobRecord({ workOrder, vendor, price: jobCreateForm.price, currentUser });
+        newJob = buildJobRecord({
+          workOrder,
+          vendor,
+          price: jobCreateForm.price,
+          currentUser,
+        });
       }
 
       if (!newJob?.id) throw new Error("Job creation did not return a job ID.");
@@ -2852,8 +3380,13 @@ function AppBuild03() {
       updateAppState((current) => ({
         ...current,
         jobs: current.jobs.some((job) => job.id === newJob.id)
-          ? current.jobs.map((job) => (job.id === newJob.id ? { ...job, ...newJob } : job))
-          : [newJob, ...current.jobs.filter((job) => job.workOrderId !== workOrder.id)],
+          ? current.jobs.map((job) =>
+              job.id === newJob.id ? { ...job, ...newJob } : job,
+            )
+          : [
+              newJob,
+              ...current.jobs.filter((job) => job.workOrderId !== workOrder.id),
+            ],
         workOrders: current.workOrders.map((entry) =>
           entry.id === workOrder.id
             ? {
@@ -2863,17 +3396,22 @@ function AppBuild03() {
                 assignedVendorName: vendor.companyName || vendor.name,
                 jobId: newJob.id,
               }
-            : entry
+            : entry,
         ),
       }));
       setSelectedJobId(newJob.id);
       showActionNotice(
         "success",
-        jobAlreadyExisted ? "Existing job linked to this work order." : "Job created and assigned."
+        jobAlreadyExisted
+          ? "Existing job linked to this work order."
+          : "Job created and assigned.",
       );
       closeModal();
     } catch (error) {
-      showActionNotice("error", `Job was not created: ${getFirebaseErrorMessage(error)}`);
+      showActionNotice(
+        "error",
+        `Job was not created: ${getFirebaseErrorMessage(error)}`,
+      );
     }
   };
 
@@ -2883,7 +3421,9 @@ function AppBuild03() {
         if (lineItem.id !== lineItemId) return lineItem;
         const updated = { ...lineItem, [key]: value };
         if (key === "qty" || key === "rate") {
-          updated.amount = (toNumber(updated.qty) * toNumber(updated.rate)).toFixed(2);
+          updated.amount = (
+            toNumber(updated.qty) * toNumber(updated.rate)
+          ).toFixed(2);
         }
         return updated;
       });
@@ -2901,7 +3441,14 @@ function AppBuild03() {
       ...current,
       lineItems: [
         ...current.lineItems,
-        { id: createId("line"), service: "", description: "", qty: "1", rate: "", amount: "" },
+        {
+          id: createId("line"),
+          service: "",
+          description: "",
+          qty: "1",
+          rate: "",
+          amount: "",
+        },
       ],
     }));
   };
@@ -2910,7 +3457,9 @@ function AppBuild03() {
     const confirmed = window.confirm("Remove this invoice line item?");
     if (!confirmed) return;
     setInvoiceForm((current) => {
-      const lineItems = current.lineItems.filter((lineItem) => lineItem.id !== lineItemId);
+      const lineItems = current.lineItems.filter(
+        (lineItem) => lineItem.id !== lineItemId,
+      );
       const total = calculateInvoiceTotal(lineItems);
       return {
         ...current,
@@ -2923,7 +3472,10 @@ function AppBuild03() {
 
   const saveProfile = async () => {
     if (!currentUser) {
-      showActionNotice("error", "Profile could not be saved because no user is active.");
+      showActionNotice(
+        "error",
+        "Profile could not be saved because no user is active.",
+      );
       return;
     }
     const requestedPassword = profileForm.password.trim();
@@ -2937,12 +3489,18 @@ function AppBuild03() {
         return;
       }
       if (!currentUser.firebaseUid) {
-        showActionNotice("error", "Password changes are only available for Firebase-authenticated users.");
+        showActionNotice(
+          "error",
+          "Password changes are only available for Firebase-authenticated users.",
+        );
         return;
       }
       const passwordResult = await updateCurrentUserPassword(requestedPassword);
       if (passwordResult.error) {
-        showActionNotice("error", `Password was not updated: ${getFirebaseErrorMessage(passwordResult.error)}`);
+        showActionNotice(
+          "error",
+          `Password was not updated: ${getFirebaseErrorMessage(passwordResult.error)}`,
+        );
         return;
       }
     }
@@ -2952,17 +3510,21 @@ function AppBuild03() {
           ? {
               ...user,
               name: profileForm.name.trim(),
-              email: isCrewUser(currentUser) ? user.email : profileForm.email.trim(),
+              email: isCrewUser(currentUser)
+                ? user.email
+                : profileForm.email.trim(),
               phone: profileForm.phone.trim(),
               jobTitle: profileForm.jobTitle.trim(),
-              companyName:
-                isCrewUser(currentUser) ? user.companyName : profileForm.companyName.trim(),
+              companyName: isCrewUser(currentUser)
+                ? user.companyName
+                : profileForm.companyName.trim(),
               streetAddress: profileForm.streetAddress.trim(),
               city: profileForm.city.trim(),
               state: profileForm.state.trim().toUpperCase(),
               zip: profileForm.zip.trim(),
               internalNotes: profileForm.internalNotes.trim(),
-              profilePhotoStatus: profileForm.profilePhotoStatus || "Photo Upload Coming Soon",
+              profilePhotoStatus:
+                profileForm.profilePhotoStatus || "Photo Upload Coming Soon",
               address: buildAddressLine({
                 streetAddress: profileForm.streetAddress.trim(),
                 city: profileForm.city.trim(),
@@ -2970,7 +3532,7 @@ function AppBuild03() {
                 zip: profileForm.zip.trim(),
               }),
             }
-          : user
+          : user,
       );
 
       if (isCrewUser(currentUser) && currentCrewRecord) {
@@ -2984,14 +3546,15 @@ function AppBuild03() {
                   contactName: profileForm.name.trim(),
                   phone: profileForm.phone.trim(),
                 }
-              : vendor
+              : vendor,
           ),
           companyProfiles: {
             ...(current.companyProfiles || {}),
             vendors: {
               ...(current.companyProfiles?.vendors || {}),
               [currentCrewRecord.id]: {
-                ...(current.companyProfiles?.vendors?.[currentCrewRecord.id] || {}),
+                ...(current.companyProfiles?.vendors?.[currentCrewRecord.id] ||
+                  {}),
                 contactName: profileForm.name.trim(),
                 phone: profileForm.phone.trim(),
               },
@@ -3005,13 +3568,25 @@ function AppBuild03() {
         users: nextUsers,
       };
     });
-    setProfileForm((current) => ({ ...current, password: "", confirmPassword: "" }));
-    showActionNotice("success", requestedPassword ? "Profile saved and Firebase password updated." : "Profile changes saved.");
+    setProfileForm((current) => ({
+      ...current,
+      password: "",
+      confirmPassword: "",
+    }));
+    showActionNotice(
+      "success",
+      requestedPassword
+        ? "Profile saved and Firebase password updated."
+        : "Profile changes saved.",
+    );
   };
 
   const saveCompanyProfile = () => {
     if (!currentUser) {
-      showActionNotice("error", "Company profile could not be saved because no user is active.");
+      showActionNotice(
+        "error",
+        "Company profile could not be saved because no user is active.",
+      );
       return;
     }
     updateAppState((current) => {
@@ -3037,7 +3612,7 @@ function AppBuild03() {
                     zip: companyProfileForm.zip,
                   }),
                 }
-              : vendor
+              : vendor,
           ),
           companyProfiles: {
             ...(current.companyProfiles || {}),
@@ -3064,12 +3639,14 @@ function AppBuild03() {
   const downloadInvoice = (invoice) => {
     if (!invoice) return;
     const linkedWorkOrder =
-      appState.workOrders.find((workOrder) => workOrder.id === invoice.workOrderId) || null;
+      appState.workOrders.find(
+        (workOrder) => workOrder.id === invoice.workOrderId,
+      ) || null;
     const markup = buildInvoiceDownloadMarkup(
       invoice,
       appState.companyProfiles?.ams,
       linkedWorkOrder,
-      currentUser
+      currentUser,
     );
     const blob = new Blob([markup], { type: "text/html;charset=utf-8" });
     const url = window.URL.createObjectURL(blob);
@@ -3083,18 +3660,26 @@ function AppBuild03() {
   };
 
   const updateWorkOrderStatus = (workOrderId, status) => {
-    const targetWorkOrder = appState.workOrders.find((workOrder) => workOrder.id === workOrderId);
+    const targetWorkOrder = appState.workOrders.find(
+      (workOrder) => workOrder.id === workOrderId,
+    );
     if (!targetWorkOrder) {
-      showActionNotice("error", "Work order status was not updated because the record was not found.");
+      showActionNotice(
+        "error",
+        "Work order status was not updated because the record was not found.",
+      );
       return;
     }
     updateAppState((current) => ({
       ...current,
       workOrders: current.workOrders.map((workOrder) =>
-        workOrder.id === workOrderId ? { ...workOrder, status } : workOrder
+        workOrder.id === workOrderId ? { ...workOrder, status } : workOrder,
       ),
     }));
-    showActionNotice("success", `${targetWorkOrder.amsWorkOrderNumber || "Work order"} updated to ${status}.`);
+    showActionNotice(
+      "success",
+      `${targetWorkOrder.amsWorkOrderNumber || "Work order"} updated to ${status}.`,
+    );
   };
 
   const canTransitionJobStatus = (currentStatus, nextStatus) => {
@@ -3131,9 +3716,18 @@ function AppBuild03() {
 
   const buildJobLifecycleUpdate = (job, status) => {
     const timestamp = new Date().toISOString();
-    const nextStartedAt = status === "In Progress" ? job.startedAt || job.startTime || timestamp : job.startedAt || job.startTime || "";
-    const nextStartTime = status === "In Progress" ? job.startTime || job.startedAt || timestamp : job.startTime || job.startedAt || "";
-    const nextCompletedTime = status === "Completed" ? job.completedTime || timestamp : job.completedTime || "";
+    const nextStartedAt =
+      status === "In Progress"
+        ? job.startedAt || job.startTime || timestamp
+        : job.startedAt || job.startTime || "";
+    const nextStartTime =
+      status === "In Progress"
+        ? job.startTime || job.startedAt || timestamp
+        : job.startTime || job.startedAt || "";
+    const nextCompletedTime =
+      status === "Completed"
+        ? job.completedTime || timestamp
+        : job.completedTime || "";
 
     return {
       status,
@@ -3151,19 +3745,31 @@ function AppBuild03() {
   const updateJobStatus = async (jobId, status) => {
     const targetJob = appState.jobs.find((job) => job.id === jobId);
     if (!targetJob) {
-      showActionNotice("error", "Job status was not updated because the record was not found.");
+      showActionNotice(
+        "error",
+        "Job status was not updated because the record was not found.",
+      );
       return;
     }
     if (!canTransitionJobStatus(targetJob.status, status)) {
-      showActionNotice("error", getInvalidJobTransitionMessage(targetJob.status, status));
+      showActionNotice(
+        "error",
+        getInvalidJobTransitionMessage(targetJob.status, status),
+      );
       return;
     }
 
     const jobUpdates = buildJobLifecycleUpdate(targetJob, status);
     if (currentUser?.firebaseUid) {
-      const result = await updateFirestoreJob(targetJob.firestoreId || targetJob.id, jobUpdates);
+      const result = await updateFirestoreJob(
+        targetJob.firestoreId || targetJob.id,
+        jobUpdates,
+      );
       if (result.error) {
-        showActionNotice("error", `Job status was not saved: ${getFirebaseErrorMessage(result.error)}`);
+        showActionNotice(
+          "error",
+          `Job status was not saved: ${getFirebaseErrorMessage(result.error)}`,
+        );
         return;
       }
     }
@@ -3179,28 +3785,36 @@ function AppBuild03() {
       }),
       workOrders: current.workOrders.map((workOrder) => {
         const linkedJob = current.jobs.find((job) => job.id === jobId);
-        if (!linkedJob || workOrder.id !== linkedJob.workOrderId) return workOrder;
+        if (!linkedJob || workOrder.id !== linkedJob.workOrderId)
+          return workOrder;
         return {
           ...workOrder,
           status:
             status === "Completed"
               ? "Completed"
               : status === "In Progress"
-              ? "In Progress"
-              : status === "Assigned"
-              ? "Assigned"
-              : workOrder.status,
+                ? "In Progress"
+                : status === "Assigned"
+                  ? "Assigned"
+                  : workOrder.status,
         };
       }),
     }));
-    showActionNotice("success", `${targetJob.siteName || "Job"} updated to ${status}.`);
+    showActionNotice(
+      "success",
+      `${targetJob.siteName || "Job"} updated to ${status}.`,
+    );
   };
 
   const cancelJobForWorkOrder = async (workOrder, job) => {
     if (!workOrder || !job) return;
-    if (job.startTime || ["In Progress", "Completed", "Canceled"].includes(job.status)) return;
+    if (
+      job.startTime ||
+      ["In Progress", "Completed", "Canceled"].includes(job.status)
+    )
+      return;
     const confirmed = window.confirm(
-      "Are you sure you want to cancel the job?\nHave you contacted the vendor?"
+      "Are you sure you want to cancel the job?\nHave you contacted the vendor?",
     );
     if (!confirmed) return;
 
@@ -3209,14 +3823,26 @@ function AppBuild03() {
     const workOrderUpdates = { status: "Canceled", canceledAt };
 
     if (currentUser?.firebaseUid) {
-      const jobResult = await updateFirestoreJob(job.firestoreId || job.id, jobUpdates);
+      const jobResult = await updateFirestoreJob(
+        job.firestoreId || job.id,
+        jobUpdates,
+      );
       if (jobResult.error) {
-        showActionNotice("error", `Job was not canceled: ${getFirebaseErrorMessage(jobResult.error)}`);
+        showActionNotice(
+          "error",
+          `Job was not canceled: ${getFirebaseErrorMessage(jobResult.error)}`,
+        );
         return;
       }
-      const workOrderResult = await updateFirestoreWorkOrder(workOrder.firestoreId || workOrder.id, workOrderUpdates);
+      const workOrderResult = await updateFirestoreWorkOrder(
+        workOrder.firestoreId || workOrder.id,
+        workOrderUpdates,
+      );
       if (workOrderResult.error) {
-        showActionNotice("error", `Work order was not canceled: ${getFirebaseErrorMessage(workOrderResult.error)}`);
+        showActionNotice(
+          "error",
+          `Work order was not canceled: ${getFirebaseErrorMessage(workOrderResult.error)}`,
+        );
         return;
       }
     }
@@ -3224,24 +3850,26 @@ function AppBuild03() {
     updateAppState((current) => ({
       ...current,
       jobs: current.jobs.map((entry) =>
-        entry.id === job.id ? { ...entry, ...jobUpdates } : entry
+        entry.id === job.id ? { ...entry, ...jobUpdates } : entry,
       ),
       workOrders: current.workOrders.map((entry) =>
-        entry.id === workOrder.id ? { ...entry, ...workOrderUpdates } : entry
+        entry.id === workOrder.id ? { ...entry, ...workOrderUpdates } : entry,
       ),
     }));
     showActionNotice("success", "Job canceled and saved.");
   };
 
   const persistProposalReviewEdits = (proposalId, updates) => {
-    const targetProposal = appState.proposals.find((proposal) => proposal.id === proposalId);
+    const targetProposal = appState.proposals.find(
+      (proposal) => proposal.id === proposalId,
+    );
     if (!targetProposal) {
       throw new Error("The selected proposal could not be found.");
     }
     updateAppState((current) => ({
       ...current,
       proposals: current.proposals.map((proposal) =>
-        proposal.id === proposalId ? { ...proposal, ...updates } : proposal
+        proposal.id === proposalId ? { ...proposal, ...updates } : proposal,
       ),
     }));
     return targetProposal;
@@ -3249,7 +3877,10 @@ function AppBuild03() {
 
   const handleSaveProposalChanges = async (proposal = selectedProposal) => {
     if (!proposal?.id) {
-      setProposalSaveNotice({ type: "error", message: "Select a proposal before saving changes." });
+      setProposalSaveNotice({
+        type: "error",
+        message: "Select a proposal before saving changes.",
+      });
       return false;
     }
     try {
@@ -3259,7 +3890,10 @@ function AppBuild03() {
         lastReviewedAt: new Date().toISOString(),
       };
       if (currentUser?.firebaseUid) {
-        const result = await updateFirestoreProposal(proposal.firestoreId || proposal.id, updates);
+        const result = await updateFirestoreProposal(
+          proposal.firestoreId || proposal.id,
+          updates,
+        );
         if (result.error) throw result.error;
       }
       const targetProposal = persistProposalReviewEdits(proposal.id, updates);
@@ -3296,16 +3930,25 @@ function AppBuild03() {
 
     try {
       if (currentUser?.firebaseUid) {
-        const result = await updateFirestoreProposal(proposal.firestoreId || proposal.id, updates);
+        const result = await updateFirestoreProposal(
+          proposal.firestoreId || proposal.id,
+          updates,
+        );
         if (result.error) throw result.error;
       }
       persistProposalReviewEdits(proposal.id, updates);
-      setProposalSaveNotice({ type: "success", message: "Revision requested." });
+      setProposalSaveNotice({
+        type: "success",
+        message: "Revision requested.",
+      });
       showActionNotice("success", "Proposal marked Revision Requested.");
     } catch (error) {
       const message = getFirebaseErrorMessage(error);
       setProposalSaveNotice({ type: "error", message });
-      showActionNotice("error", `Revision request did not complete: ${message}`);
+      showActionNotice(
+        "error",
+        `Revision request did not complete: ${message}`,
+      );
     }
   };
 
@@ -3323,22 +3966,32 @@ function AppBuild03() {
 
     try {
       if (currentUser?.firebaseUid) {
-        const result = await updateFirestoreProposal(proposal.firestoreId || proposal.id, updates);
+        const result = await updateFirestoreProposal(
+          proposal.firestoreId || proposal.id,
+          updates,
+        );
         if (result.error) throw result.error;
       }
       persistProposalReviewEdits(proposal.id, updates);
       setProposalSaveNotice({ type: "success", message: "Proposal rejected." });
       showActionNotice("success", "Proposal rejected.");
     } catch (error) {
-      setProposalSaveNotice({ type: "error", message: getFirebaseErrorMessage(error) });
+      setProposalSaveNotice({
+        type: "error",
+        message: getFirebaseErrorMessage(error),
+      });
     }
   };
 
   const handleApproveProposal = async (proposal = selectedProposal) => {
     if (!proposal) return;
-    const workOrderForProposal = appState.workOrders.find((entry) => entry.id === proposal.workOrderId);
+    const workOrderForProposal = appState.workOrders.find(
+      (entry) => entry.id === proposal.workOrderId,
+    );
     if (!workOrderForProposal) return;
-    const vendor = normalizedVendors.find((entry) => entry.id === proposal.vendorId);
+    const vendor = normalizedVendors.find(
+      (entry) => entry.id === proposal.vendorId,
+    );
     if (!vendor) {
       window.alert("The proposal crew could not be found.");
       return;
@@ -3350,12 +4003,16 @@ function AppBuild03() {
     ) {
       setProposalSaveNotice({
         type: "error",
-        message: "This work order is already assigned to another approved proposal.",
+        message:
+          "This work order is already assigned to another approved proposal.",
       });
       return;
     }
     const approvedAt = new Date().toISOString();
-    const approvedPrice = reviewForm.reviewedPrice || proposal.reviewedPrice || proposal.submittedPrice;
+    const approvedPrice =
+      reviewForm.reviewedPrice ||
+      proposal.reviewedPrice ||
+      proposal.submittedPrice;
     const updates = {
       status: "approved",
       reviewedPrice: approvedPrice,
@@ -3374,7 +4031,11 @@ function AppBuild03() {
         const result = await approveFirestoreProposalForWorkOrder({
           proposal: {
             ...proposal,
-            vendorName: proposal.vendorName || proposal.vendorCompanyName || vendor.companyName || vendor.name,
+            vendorName:
+              proposal.vendorName ||
+              proposal.vendorCompanyName ||
+              vendor.companyName ||
+              vendor.name,
           },
           workOrder: workOrderForProposal,
           updates,
@@ -3385,14 +4046,19 @@ function AppBuild03() {
         approvedJobId = result.jobId || approvedJob?.id || approvedJobId;
         jobAlreadyExisted = Boolean(result.jobAlreadyExisted);
       } else {
-        const existingJob = appState.jobs.find((job) => job.workOrderId === workOrderForProposal.id);
-        approvedJob = existingJob || buildJobRecord({
-          workOrder: workOrderForProposal,
-          vendor,
-          price: approvedPrice,
-          sell: workOrderForProposal.sell || workOrderForProposal.sellPrice || "",
-          currentUser,
-        });
+        const existingJob = appState.jobs.find(
+          (job) => job.workOrderId === workOrderForProposal.id,
+        );
+        approvedJob =
+          existingJob ||
+          buildJobRecord({
+            workOrder: workOrderForProposal,
+            vendor,
+            price: approvedPrice,
+            sell:
+              workOrderForProposal.sell || workOrderForProposal.sellPrice || "",
+            currentUser,
+          });
         approvedJobId = approvedJob.id;
         jobAlreadyExisted = Boolean(existingJob);
       }
@@ -3401,8 +4067,15 @@ function AppBuild03() {
         const nextJobs =
           approvedJob && approvedJob.id
             ? current.jobs.some((job) => job.id === approvedJob.id)
-              ? current.jobs.map((job) => (job.id === approvedJob.id ? { ...job, ...approvedJob } : job))
-              : [approvedJob, ...current.jobs.filter((job) => job.workOrderId !== workOrderForProposal.id)]
+              ? current.jobs.map((job) =>
+                  job.id === approvedJob.id ? { ...job, ...approvedJob } : job,
+                )
+              : [
+                  approvedJob,
+                  ...current.jobs.filter(
+                    (job) => job.workOrderId !== workOrderForProposal.id,
+                  ),
+                ]
             : current.jobs;
 
         return {
@@ -3434,7 +4107,7 @@ function AppBuild03() {
                   proposalAwardedAt: approvedAt,
                   jobId: approvedJobId,
                 }
-              : workOrder
+              : workOrder,
           ),
         };
       });
@@ -3443,9 +4116,15 @@ function AppBuild03() {
         ? "Proposal approved. Existing job was linked to the work order."
         : "Proposal approved. Job created and assigned.";
       setProposalSaveNotice({ type: "success", message: successMessage });
-      showActionNotice("success", `${successMessage} Competing submitted proposals were rejected.`);
+      showActionNotice(
+        "success",
+        `${successMessage} Competing submitted proposals were rejected.`,
+      );
     } catch (error) {
-      setProposalSaveNotice({ type: "error", message: getFirebaseErrorMessage(error) });
+      setProposalSaveNotice({
+        type: "error",
+        message: getFirebaseErrorMessage(error),
+      });
     }
   };
 
@@ -3472,16 +4151,25 @@ function AppBuild03() {
   };
 
   const openCrewOpportunityDetails = (workOrderId) => {
-    updateVendorProposalDraft(workOrderId, "submittedPrice", vendorProposalDrafts[workOrderId]?.submittedPrice || "");
+    updateVendorProposalDraft(
+      workOrderId,
+      "submittedPrice",
+      vendorProposalDrafts[workOrderId]?.submittedPrice || "",
+    );
     setSelectedCrewOpportunityId(workOrderId);
   };
 
   const hideCrewOpportunity = (workOrderId) => {
     if (!workOrderId || !currentCrewRecord) {
-      showActionNotice("error", "Opportunity could not be hidden because the Crew record was not found.");
+      showActionNotice(
+        "error",
+        "Opportunity could not be hidden because the Crew record was not found.",
+      );
       return;
     }
-    const targetWorkOrder = appState.workOrders.find((workOrder) => workOrder.id === workOrderId);
+    const targetWorkOrder = appState.workOrders.find(
+      (workOrder) => workOrder.id === workOrderId,
+    );
     const crewKey = currentCrewRecord.id || currentUser?.id;
     updateAppState((current) => {
       const hiddenByCrew = current.ui?.hiddenCrewOpportunityIdsByUser || {};
@@ -3502,20 +4190,27 @@ function AppBuild03() {
     if (selectedCrewOpportunityId === workOrderId) {
       setSelectedCrewOpportunityId(null);
     }
-    showActionNotice("success", `${targetWorkOrder?.siteName || "Opportunity"} hidden from Available Work.`);
+    showActionNotice(
+      "success",
+      `${targetWorkOrder?.siteName || "Opportunity"} hidden from Available Work.`,
+    );
   };
 
   const handleCrewProposalSubmit = async (workOrder) => {
     if (!currentCrewRecord) return;
     const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
-    if (!canCrewSubmitProposal({
-      workOrder,
-      site,
-      vendor: currentCrewRecord,
-      proposals: appState.proposals,
-      jobs: appState.jobs,
-    })) {
-      window.alert("This proposal opportunity is not available for submission.");
+    if (
+      !canCrewSubmitProposal({
+        workOrder,
+        site,
+        vendor: currentCrewRecord,
+        proposals: appState.proposals,
+        jobs: appState.jobs,
+      })
+    ) {
+      window.alert(
+        "This proposal opportunity is not available for submission.",
+      );
       return;
     }
 
@@ -3525,7 +4220,11 @@ function AppBuild03() {
       return;
     }
 
-    const latestProposal = getLatestCrewProposal(appState.proposals, workOrder.id, currentCrewRecord.id);
+    const latestProposal = getLatestCrewProposal(
+      appState.proposals,
+      workOrder.id,
+      currentCrewRecord.id,
+    );
     const submittedAt = new Date().toISOString();
     const newProposal = {
       id: createId("proposal"),
@@ -3534,8 +4233,13 @@ function AppBuild03() {
       siteName: workOrder.siteName || site?.name || "",
       vendorId: currentCrewRecord.id,
       vendorName: currentCrewRecord.companyName || currentCrewRecord.name,
-      vendorCompanyName: currentCrewRecord.companyName || currentCrewRecord.name,
-      vendorUserEmail: currentCrewRecord.userEmail || currentCrewRecord.email || currentUser?.email || "",
+      vendorCompanyName:
+        currentCrewRecord.companyName || currentCrewRecord.name,
+      vendorUserEmail:
+        currentCrewRecord.userEmail ||
+        currentCrewRecord.email ||
+        currentUser?.email ||
+        "",
       serviceType: workOrder.serviceType || "",
       price: draft.submittedPrice,
       notes: draft.submittedNotes || "",
@@ -3548,8 +4252,13 @@ function AppBuild03() {
       amsNotes: "",
       lastReviewedAt: "",
       status: "submitted",
-      revisionNumber: latestProposal ? (latestProposal.revisionNumber || latestProposal.revisionCount || 1) + 1 : 1,
-      revisionCount: latestProposal ? (latestProposal.revisionCount || 1) + 1 : 1,
+      revisionNumber: latestProposal
+        ? (latestProposal.revisionNumber || latestProposal.revisionCount || 1) +
+          1
+        : 1,
+      revisionCount: latestProposal
+        ? (latestProposal.revisionCount || 1) + 1
+        : 1,
       supersedesProposalId: latestProposal?.id || null,
       isActivePath: true,
       rejectedAt: "",
@@ -3574,7 +4283,7 @@ function AppBuild03() {
         ...current.proposals.map((proposal) =>
           latestProposal && proposal.id === latestProposal.id
             ? { ...proposal, isActivePath: false }
-            : proposal
+            : proposal,
         ),
       ],
     }));
@@ -3589,27 +4298,36 @@ function AppBuild03() {
 
   const createInvoiceForJob = async (job) => {
     if (!currentUser || !isCrewUser(currentUser) || !currentCrewRecord) {
-      showActionNotice("error", "Invoice could not be submitted because the Crew record was not found.");
+      showActionNotice(
+        "error",
+        "Invoice could not be submitted because the Crew record was not found.",
+      );
       return;
     }
     if (job.vendorId !== currentCrewRecord.id) {
-      showActionNotice("error", "Invoice could not be submitted because this job belongs to another Crew record.");
+      showActionNotice(
+        "error",
+        "Invoice could not be submitted because this job belongs to another Crew record.",
+      );
       return;
     }
     if (getInvoiceForJob(appState.invoices, job.id)) {
       window.alert("An invoice already exists for this job.");
       return;
     }
-    const workOrder = appState.workOrders.find((entry) => entry.id === job.workOrderId);
-    const companyProfile = appState.companyProfiles?.vendors?.[job.vendorId] || {};
+    const workOrder = appState.workOrders.find(
+      (entry) => entry.id === job.workOrderId,
+    );
+    const companyProfile =
+      appState.companyProfiles?.vendors?.[job.vendorId] || {};
     const invoice = {
       ...buildInvoiceRecord({ job, workOrder, currentUser }),
       vendorCompany: { ...companyProfile },
       amount: calculateInvoiceTotal(
-        buildInvoiceRecord({ job, workOrder, currentUser }).lineItems
+        buildInvoiceRecord({ job, workOrder, currentUser }).lineItems,
       ),
       total: calculateInvoiceTotal(
-        buildInvoiceRecord({ job, workOrder, currentUser }).lineItems
+        buildInvoiceRecord({ job, workOrder, currentUser }).lineItems,
       ),
     };
     let invoiceToStore = invoice;
@@ -3620,7 +4338,10 @@ function AppBuild03() {
         jobId: job.firestoreId || job.id,
       });
       if (invoiceResult.error) {
-        showActionNotice("error", `Invoice was not submitted: ${getFirebaseErrorMessage(invoiceResult.error)}`);
+        showActionNotice(
+          "error",
+          `Invoice was not submitted: ${getFirebaseErrorMessage(invoiceResult.error)}`,
+        );
         return;
       }
       if (invoiceResult.alreadyExists) {
@@ -3628,21 +4349,27 @@ function AppBuild03() {
         return;
       }
       if (!invoiceResult.invoice?.id) {
-        showActionNotice("error", "Invoice was not submitted because Firestore did not return an invoice ID.");
+        showActionNotice(
+          "error",
+          "Invoice was not submitted because Firestore did not return an invoice ID.",
+        );
         return;
       }
       invoiceToStore = invoiceResult.invoice;
     }
     updateAppState((current) => ({
       ...current,
-      invoices: [invoiceToStore, ...current.invoices.filter((entry) => entry.jobId !== job.id)],
+      invoices: [
+        invoiceToStore,
+        ...current.invoices.filter((entry) => entry.jobId !== job.id),
+      ],
       jobs: current.jobs.map((entry) =>
         entry.id === job.id
           ? {
               ...entry,
               ...jobUpdates,
             }
-          : entry
+          : entry,
       ),
     }));
     setSelectedInvoiceId(invoiceToStore.id);
@@ -3654,11 +4381,17 @@ function AppBuild03() {
     const job = appState.jobs.find((entry) => entry.id === jobId);
     if (!job) return;
     if (type === "start" && job.status !== "Assigned") {
-      showActionNotice("error", getInvalidJobTransitionMessage(job.status, "In Progress"));
+      showActionNotice(
+        "error",
+        getInvalidJobTransitionMessage(job.status, "In Progress"),
+      );
       return;
     }
     if (type === "complete" && job.status !== "In Progress") {
-      showActionNotice("error", getInvalidJobTransitionMessage(job.status, "Completed"));
+      showActionNotice(
+        "error",
+        getInvalidJobTransitionMessage(job.status, "Completed"),
+      );
       return;
     }
     setJobConfirmation({ type, jobId });
@@ -3666,28 +4399,52 @@ function AppBuild03() {
 
   const confirmJobStatusChange = async () => {
     if (!jobConfirmation?.jobId) return;
-    const nextStatus = jobConfirmation.type === "start" ? "In Progress" : "Completed";
+    const nextStatus =
+      jobConfirmation.type === "start" ? "In Progress" : "Completed";
     await updateJobStatus(jobConfirmation.jobId, nextStatus);
     setJobConfirmation(null);
   };
 
   const saveJobSell = async (jobId, sellValue) => {
-    if (!jobId || !(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER)) {
-      setSellSaveNotice({ type: "error", message: "You do not have permission to save AMS sell pricing." });
+    if (
+      !jobId ||
+      !(
+        AMS_ROLES.includes(currentUser?.role) ||
+        currentUser?.role === ROLES.OWNER
+      )
+    ) {
+      setSellSaveNotice({
+        type: "error",
+        message: "You do not have permission to save AMS sell pricing.",
+      });
       return false;
     }
     const targetJob = appState.jobs.find((job) => job.id === jobId);
     if (!targetJob) {
-      setSellSaveNotice({ type: "error", message: "Sell price was not saved because the selected job was not found." });
+      setSellSaveNotice({
+        type: "error",
+        message:
+          "Sell price was not saved because the selected job was not found.",
+      });
       return false;
     }
-    const pricingUpdates = buildPricingFields({ sell: sellValue, currentUser, existingJob: targetJob });
+    const pricingUpdates = buildPricingFields({
+      sell: sellValue,
+      currentUser,
+      existingJob: targetJob,
+    });
     const canonicalSellValue = pricingUpdates.sell;
 
     if (currentUser?.firebaseUid) {
-      const result = await updateFirestoreJob(targetJob.firestoreId || targetJob.id, pricingUpdates);
+      const result = await updateFirestoreJob(
+        targetJob.firestoreId || targetJob.id,
+        pricingUpdates,
+      );
       if (result.error) {
-        setSellSaveNotice({ type: "error", message: `Sell price was not saved: ${getFirebaseErrorMessage(result.error)}` });
+        setSellSaveNotice({
+          type: "error",
+          message: `Sell price was not saved: ${getFirebaseErrorMessage(result.error)}`,
+        });
         return false;
       }
     }
@@ -3703,27 +4460,48 @@ function AppBuild03() {
                 ...pricingUpdates,
               };
             })()
-          : job
+          : job,
       ),
     }));
-    setSellSaveNotice({ type: "success", message: `Sell price saved for ${targetJob.siteName}.` });
-    setJobSellDrafts((current) => ({ ...current, [jobId]: canonicalSellValue }));
+    setSellSaveNotice({
+      type: "success",
+      message: `Sell price saved for ${targetJob.siteName}.`,
+    });
+    setJobSellDrafts((current) => ({
+      ...current,
+      [jobId]: canonicalSellValue,
+    }));
     return true;
   };
 
   const saveJobCost = async (jobId, costValue) => {
-    if (!jobId || !(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER)) {
-      setSellSaveNotice({ type: "error", message: "You do not have permission to save crew cost." });
+    if (
+      !jobId ||
+      !(
+        AMS_ROLES.includes(currentUser?.role) ||
+        currentUser?.role === ROLES.OWNER
+      )
+    ) {
+      setSellSaveNotice({
+        type: "error",
+        message: "You do not have permission to save crew cost.",
+      });
       return false;
     }
     const targetJob = appState.jobs.find((job) => job.id === jobId);
     if (!targetJob) {
-      setSellSaveNotice({ type: "error", message: "Cost was not saved because the selected job was not found." });
+      setSellSaveNotice({
+        type: "error",
+        message: "Cost was not saved because the selected job was not found.",
+      });
       return false;
     }
     const linkedInvoice = getInvoiceForJob(appState.invoices, targetJob.id);
-    const previousInvoiceCost = linkedInvoice?.amount ?? linkedInvoice?.total ?? "";
-    const invoiceCostChanged = Boolean(linkedInvoice) && didCostValueChange(previousInvoiceCost, costValue);
+    const previousInvoiceCost =
+      linkedInvoice?.amount ?? linkedInvoice?.total ?? "";
+    const invoiceCostChanged =
+      Boolean(linkedInvoice) &&
+      didCostValueChange(previousInvoiceCost, costValue);
     const editedBy = currentUser?.email || "";
 
     const costUpdates = {
@@ -3743,7 +4521,10 @@ function AppBuild03() {
             newCost: costValue,
             editedBy,
           })
-        : await updateFirestoreJob(targetJob.firestoreId || targetJob.id, costUpdates);
+        : await updateFirestoreJob(
+            targetJob.firestoreId || targetJob.id,
+            costUpdates,
+          );
       if (result.error) {
         setSellSaveNotice({
           type: "error",
@@ -3763,7 +4544,7 @@ function AppBuild03() {
               ...job,
               ...costUpdates,
             }
-          : job
+          : job,
       ),
       invoices: linkedInvoice
         ? current.invoices.map((invoice) =>
@@ -3788,7 +4569,7 @@ function AppBuild03() {
                       }
                     : {}),
                 }
-              : invoice
+              : invoice,
           )
         : current.invoices,
     }));
@@ -3814,16 +4595,25 @@ function AppBuild03() {
   const startJobSellEdit = (job) => {
     if (!job) return;
     setSellSaveNotice(null);
-    setJobSellDrafts((current) => ({ ...current, [job.id]: current[job.id] ?? getJobSellValue(job) }));
+    setJobSellDrafts((current) => ({
+      ...current,
+      [job.id]: current[job.id] ?? getJobSellValue(job),
+    }));
     setEditingJobSellId(job.id);
   };
 
   const saveJobSellForJob = async (job) => {
     if (!job?.id) {
-      setSellSaveNotice({ type: "error", message: "Choose a job before saving sell pricing." });
+      setSellSaveNotice({
+        type: "error",
+        message: "Choose a job before saving sell pricing.",
+      });
       return;
     }
-    const saved = await saveJobSell(job.id, jobSellDrafts[job.id] ?? getJobSellValue(job));
+    const saved = await saveJobSell(
+      job.id,
+      jobSellDrafts[job.id] ?? getJobSellValue(job),
+    );
     if (saved && editingJobSellId === job.id) setEditingJobSellId(null);
   };
 
@@ -3847,7 +4637,10 @@ function AppBuild03() {
     }
     const locked = selectedInvoice?.status === "Paid";
     if (locked) {
-      showActionNotice("error", "Paid invoices are locked and cannot be edited.");
+      showActionNotice(
+        "error",
+        "Paid invoices are locked and cannot be edited.",
+      );
       return;
     }
     const total = calculateInvoiceTotal(invoiceForm.lineItems);
@@ -3858,9 +4651,15 @@ function AppBuild03() {
       total,
     };
     if (currentUser?.firebaseUid) {
-      const result = await updateFirestoreInvoice(selectedInvoice.firestoreId || selectedInvoice.id, invoiceUpdates);
+      const result = await updateFirestoreInvoice(
+        selectedInvoice.firestoreId || selectedInvoice.id,
+        invoiceUpdates,
+      );
       if (result.error) {
-        showActionNotice("error", `Invoice was not saved: ${getFirebaseErrorMessage(result.error)}`);
+        showActionNotice(
+          "error",
+          `Invoice was not saved: ${getFirebaseErrorMessage(result.error)}`,
+        );
         return;
       }
     }
@@ -3872,7 +4671,7 @@ function AppBuild03() {
               ...invoice,
               ...invoiceUpdates,
             }
-          : invoice
+          : invoice,
       ),
     }));
     showActionNotice("success", "Invoice saved.");
@@ -3885,7 +4684,10 @@ function AppBuild03() {
       return;
     }
     if (selectedInvoice?.status === "Paid") {
-      showActionNotice("error", "Paid invoices are locked and cannot be updated.");
+      showActionNotice(
+        "error",
+        "Paid invoices are locked and cannot be updated.",
+      );
       return;
     }
     const timestamp = new Date().toISOString();
@@ -3896,9 +4698,18 @@ function AppBuild03() {
       status: normalizedStatus,
       amount: calculateInvoiceTotal(invoiceForm.lineItems),
       total: calculateInvoiceTotal(invoiceForm.lineItems),
-      approvedAt: normalizedStatus === "Approved" ? selectedInvoice.approvedAt || timestamp : selectedInvoice.approvedAt || "",
-      approvedBy: normalizedStatus === "Approved" ? currentUser?.email || currentUser?.name || "" : selectedInvoice.approvedBy || "",
-      paidAt: normalizedStatus === "Paid" ? selectedInvoice.paidAt || timestamp : selectedInvoice.paidAt || "",
+      approvedAt:
+        normalizedStatus === "Approved"
+          ? selectedInvoice.approvedAt || timestamp
+          : selectedInvoice.approvedAt || "",
+      approvedBy:
+        normalizedStatus === "Approved"
+          ? currentUser?.email || currentUser?.name || ""
+          : selectedInvoice.approvedBy || "",
+      paidAt:
+        normalizedStatus === "Paid"
+          ? selectedInvoice.paidAt || timestamp
+          : selectedInvoice.paidAt || "",
     };
     if (currentUser?.firebaseUid) {
       if (shouldCloseJob) {
@@ -3906,16 +4717,25 @@ function AppBuild03() {
           selectedInvoice.firestoreId || selectedInvoice.id,
           invoiceUpdates,
           selectedInvoiceJob.firestoreId || selectedInvoiceJob.id,
-          { status: "Closed" }
+          { status: "Closed" },
         );
         if (result.error) {
-          showActionNotice("error", `Invoice was not marked Paid: ${getFirebaseErrorMessage(result.error)}`);
+          showActionNotice(
+            "error",
+            `Invoice was not marked Paid: ${getFirebaseErrorMessage(result.error)}`,
+          );
           return;
         }
       } else {
-        const invoiceResult = await updateFirestoreInvoice(selectedInvoice.firestoreId || selectedInvoice.id, invoiceUpdates);
+        const invoiceResult = await updateFirestoreInvoice(
+          selectedInvoice.firestoreId || selectedInvoice.id,
+          invoiceUpdates,
+        );
         if (invoiceResult.error) {
-          showActionNotice("error", `Invoice status was not saved: ${getFirebaseErrorMessage(invoiceResult.error)}`);
+          showActionNotice(
+            "error",
+            `Invoice status was not saved: ${getFirebaseErrorMessage(invoiceResult.error)}`,
+          );
           return;
         }
       }
@@ -3928,7 +4748,7 @@ function AppBuild03() {
               ...invoice,
               ...invoiceUpdates,
             }
-          : invoice
+          : invoice,
       ),
       jobs: shouldCloseJob
         ? current.jobs.map((job) =>
@@ -3937,24 +4757,39 @@ function AppBuild03() {
                   ...job,
                   status: "Closed",
                 }
-              : job
+              : job,
           )
         : current.jobs,
     }));
-    showActionNotice("success", shouldCloseJob ? "Invoice marked Paid and job closed." : `Invoice marked ${normalizedStatus}.`);
+    showActionNotice(
+      "success",
+      shouldCloseJob
+        ? "Invoice marked Paid and job closed."
+        : `Invoice marked ${normalizedStatus}.`,
+    );
   };
 
   const openWorkOrders = appState.workOrders.filter((entry) =>
-    ["Needs Review", "Needs Attention", "Needs Vendor", "Scheduled", "Open"].includes(entry.status)
+    [
+      "Needs Review",
+      "Needs Attention",
+      "Needs Vendor",
+      "Scheduled",
+      "Open",
+    ].includes(entry.status),
   );
   const proposalOpportunities = appState.workOrders.filter(
-    (entry) => entry.proposalRequired && entry.proposalState === "opportunity"
+    (entry) => entry.proposalRequired && entry.proposalState === "opportunity",
   );
   const proposalsAwaitingDecision = appState.proposals.filter(
-    (proposal) => proposal.isActivePath && proposal.status === "submitted"
+    (proposal) => proposal.isActivePath && proposal.status === "submitted",
   );
-  const invoicesAwaitingReview = appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted");
-  const paidInvoices = appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Paid");
+  const invoicesAwaitingReview = appState.invoices.filter(
+    (invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted",
+  );
+  const paidInvoices = appState.invoices.filter(
+    (invoice) => normalizeInvoiceStatus(invoice.status) === "Paid",
+  );
 
   const visibleCrewJobs =
     currentUser && currentCrewRecord
@@ -3963,35 +4798,60 @@ function AppBuild03() {
   const crewInvoices =
     currentCrewRecord && isCrewUser(currentUser)
       ? appState.jobs
-          .filter((job) => job.vendorId === currentCrewRecord.id && ["Completed", "Invoiced", "Closed"].includes(job.status))
-          .map((job) => ({ job, invoice: getInvoiceForJob(appState.invoices, job.id) }))
+          .filter(
+            (job) =>
+              job.vendorId === currentCrewRecord.id &&
+              ["Completed", "Invoiced", "Closed"].includes(job.status),
+          )
+          .map((job) => ({
+            job,
+            invoice: getInvoiceForJob(appState.invoices, job.id),
+          }))
       : [];
-  const crewSubmittedInvoices = [...crewInvoices.filter(({ invoice }) => invoice).map(({ job, invoice }) => ({ id: invoice.id, job, invoice }))].sort(
-    (a, b) => new Date(b.invoice?.submittedAt || 0).getTime() - new Date(a.invoice?.submittedAt || 0).getTime()
+  const crewSubmittedInvoices = [
+    ...crewInvoices
+      .filter(({ invoice }) => invoice)
+      .map(({ job, invoice }) => ({ id: invoice.id, job, invoice })),
+  ].sort(
+    (a, b) =>
+      new Date(b.invoice?.submittedAt || 0).getTime() -
+      new Date(a.invoice?.submittedAt || 0).getTime(),
   );
-  const crewOpenInvoices = crewInvoices.filter(({ invoice }) => invoice && normalizeInvoiceStatus(invoice.status) !== "Paid");
-  const crewPaidInvoices = crewInvoices.filter(({ invoice }) => normalizeInvoiceStatus(invoice?.status) === "Paid");
+  const crewOpenInvoices = crewInvoices.filter(
+    ({ invoice }) =>
+      invoice && normalizeInvoiceStatus(invoice.status) !== "Paid",
+  );
+  const crewPaidInvoices = crewInvoices.filter(
+    ({ invoice }) => normalizeInvoiceStatus(invoice?.status) === "Paid",
+  );
 
   const vendorSites =
     currentUser && currentCrewRecord
       ? appState.sites.filter(
           (site) =>
             site.assignedVendorId === currentCrewRecord.id ||
-            visibleCrewJobs.some((job) => job.siteId === site.id)
+            visibleCrewJobs.some((job) => job.siteId === site.id),
         )
       : [];
-  const hiddenCrewOpportunityIds =
-    currentCrewRecord
-      ? appState.ui?.hiddenCrewOpportunityIdsByUser?.[currentCrewRecord.id || currentUser?.id] || []
-      : [];
+  const hiddenCrewOpportunityIds = currentCrewRecord
+    ? appState.ui?.hiddenCrewOpportunityIdsByUser?.[
+        currentCrewRecord.id || currentUser?.id
+      ] || []
+    : [];
   const crewOpportunityDataReady =
     Boolean(currentUser) &&
-    (!currentUser.firebaseUid || (workOrdersLoaded && jobsLoaded && vendorsLoaded && proposalsLoaded));
+    (!currentUser.firebaseUid ||
+      (workOrdersLoaded && jobsLoaded && vendorsLoaded && proposalsLoaded));
   const availableCrewWork =
-    currentUser && isCrewUser(currentUser) && currentCrewRecord && crewOpportunityDataReady
+    currentUser &&
+    isCrewUser(currentUser) &&
+    currentCrewRecord &&
+    crewOpportunityDataReady
       ? appState.workOrders.filter((workOrder) => {
           if (hiddenCrewOpportunityIds.includes(workOrder.id)) return false;
-          const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
+          const site = appState.sites.find(
+            (entry) => entry.id === workOrder.siteId,
+          );
           return canCrewSubmitProposal({
             workOrder,
             site,
@@ -4003,74 +4863,114 @@ function AppBuild03() {
       : [];
   const crewAvailableWorkEmptyText = (() => {
     if (!crewOpportunityDataReady) return "";
-    if (!currentUser || !isCrewUser(currentUser)) return "Crew login is required to view available work.";
+    if (!currentUser || !isCrewUser(currentUser))
+      return "Crew login is required to view available work.";
     if (currentUser.demo && !currentUser.firebaseUid) {
       return "Crew Demo is active, but it is not linked to a Firestore Crew company profile. Use a real Crew test login to view live available work.";
     }
-    if (!currentCrewRecord) return "No matching Crew company profile was found for this login.";
+    if (!currentCrewRecord)
+      return "No matching Crew company profile was found for this login.";
     if (!appState.workOrders.length) return "No work orders are available yet.";
 
-    const visibleWorkOrders = appState.workOrders.filter((workOrder) => !hiddenCrewOpportunityIds.includes(workOrder.id));
+    const visibleWorkOrders = appState.workOrders.filter(
+      (workOrder) => !hiddenCrewOpportunityIds.includes(workOrder.id),
+    );
     const unassignedWorkOrders = visibleWorkOrders.filter(
-      (workOrder) => !isWorkOrderTrulyAssigned(workOrder)
+      (workOrder) => !isWorkOrderTrulyAssigned(workOrder),
     );
 
-    if (!unassignedWorkOrders.length) return "No unassigned work orders are available right now.";
+    if (!unassignedWorkOrders.length)
+      return "No unassigned work orders are available right now.";
 
-    const openWorkOrders = unassignedWorkOrders.filter((workOrder) => isCrewOpenWorkOrderStatus(workOrder.status));
-    if (!openWorkOrders.length) return "No open Crew opportunities are available right now.";
+    const openWorkOrders = unassignedWorkOrders.filter((workOrder) =>
+      isCrewOpenWorkOrderStatus(workOrder.status),
+    );
+    if (!openWorkOrders.length)
+      return "No open Crew opportunities are available right now.";
 
     const vendorStates = getVendorCoverageStates(currentCrewRecord);
     const stateMatchedWorkOrders = openWorkOrders.filter((workOrder) => {
-      const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
+      const site = appState.sites.find(
+        (entry) => entry.id === workOrder.siteId,
+      );
       const workOrderState = getWorkOrderDispatchState(workOrder, site);
       return Boolean(workOrderState && vendorStates.includes(workOrderState));
     });
 
-    if (!vendorStates.length) return "Your Crew profile does not have a service state assigned yet.";
-    if (!stateMatchedWorkOrders.length) return `No eligible work orders are available in ${vendorStates.join(", ")} right now.`;
+    if (!vendorStates.length)
+      return "Your Crew profile does not have a service state assigned yet.";
+    if (!stateMatchedWorkOrders.length)
+      return `No eligible work orders are available in ${vendorStates.join(", ")} right now.`;
 
     return "No available work matches your Crew profile right now.";
   })();
   const selectedCrewOpportunity =
-    availableCrewWork.find((workOrder) => workOrder.id === selectedCrewOpportunityId) || null;
+    availableCrewWork.find(
+      (workOrder) => workOrder.id === selectedCrewOpportunityId,
+    ) || null;
   const selectedCrewOpportunitySite = selectedCrewOpportunity
-    ? appState.sites.find((site) => site.id === selectedCrewOpportunity.siteId) || null
+    ? appState.sites.find(
+        (site) => site.id === selectedCrewOpportunity.siteId,
+      ) || null
     : null;
   const selectedCrewOpportunityDraft = selectedCrewOpportunity
-    ? vendorProposalDrafts[selectedCrewOpportunity.id] || { submittedPrice: "", submittedNotes: "" }
+    ? vendorProposalDrafts[selectedCrewOpportunity.id] || {
+        submittedPrice: "",
+        submittedNotes: "",
+      }
     : { submittedPrice: "", submittedNotes: "" };
   const selectedCrewOpportunityLatestProposal =
     selectedCrewOpportunity && currentCrewRecord
-      ? getLatestCrewProposal(appState.proposals, selectedCrewOpportunity.id, currentCrewRecord.id)
+      ? getLatestCrewProposal(
+          appState.proposals,
+          selectedCrewOpportunity.id,
+          currentCrewRecord.id,
+        )
       : null;
-  const activeCrewJobs = visibleCrewJobs.filter((job) => ["Assigned", "In Progress"].includes(job.status));
+  const activeCrewJobs = visibleCrewJobs.filter((job) =>
+    ["Assigned", "In Progress"].includes(job.status),
+  );
   const completedCrewJobs = sortByNewest(
-    visibleCrewJobs.filter((job) => ["Completed", "Invoiced", "Closed"].includes(job.status)),
-    "completedTime"
+    visibleCrewJobs.filter((job) =>
+      ["Completed", "Invoiced", "Closed"].includes(job.status),
+    ),
+    "completedTime",
   );
   const filteredCrewSites = vendorSites.filter((site) =>
     searchMatches(
-      [site.name, site.address, site.streetAddress, site.city, site.state, site.zip, site.assignedVendorName],
-      crewSiteSearch
-    )
+      [
+        site.name,
+        site.address,
+        site.streetAddress,
+        site.city,
+        site.state,
+        site.zip,
+        site.assignedVendorName,
+      ],
+      crewSiteSearch,
+    ),
   );
   const selectedCrewSite =
-    filteredCrewSites.find((site) => site.id === selectedCrewSiteId) || filteredCrewSites[0] || null;
+    filteredCrewSites.find((site) => site.id === selectedCrewSiteId) ||
+    filteredCrewSites[0] ||
+    null;
   const selectedCrewSiteServiceLog = selectedCrewSite
     ? sortByNewest(
         completedCrewJobs
           .filter(
             (job) =>
               job.siteId === selectedCrewSite.id &&
-              job.vendorId === currentCrewRecord?.id
+              job.vendorId === currentCrewRecord?.id,
           )
           .map((job) => ({
             ...job,
             invoice: getInvoiceForJob(appState.invoices, job.id) || null,
-            workOrder: appState.workOrders.find((workOrder) => workOrder.id === job.workOrderId) || null,
+            workOrder:
+              appState.workOrders.find(
+                (workOrder) => workOrder.id === job.workOrderId,
+              ) || null,
           })),
-        "completedTime"
+        "completedTime",
       )
     : [];
   const filteredCompletedCrewJobs = completedCrewJobs.filter((job) =>
@@ -4081,11 +4981,13 @@ function AppBuild03() {
         job.scope,
         job.notes,
         job.description,
-        appState.workOrders.find((workOrder) => workOrder.id === job.workOrderId)?.amsWorkOrderNumber,
+        appState.workOrders.find(
+          (workOrder) => workOrder.id === job.workOrderId,
+        )?.amsWorkOrderNumber,
         getInvoiceForJob(appState.invoices, job.id)?.status,
       ],
-      crewCompletedJobSearch
-    )
+      crewCompletedJobSearch,
+    ),
   );
 
   const filteredWorkOrders = appState.workOrders.filter(
@@ -4101,50 +5003,73 @@ function AppBuild03() {
           workOrder.assignedVendorName,
           workOrder.serviceType,
         ],
-        workOrderSearch
-      )
+        workOrderSearch,
+      ),
   );
   const filteredJobs = appState.jobs.filter(
     (job) =>
       getJobFilterMatch(job, jobFilter) &&
       searchMatches(
-        [job.id, job.siteName, job.description, job.vendorName, job.serviceType, job.workOrderId],
-        jobSearch
-      )
+        [
+          job.id,
+          job.siteName,
+          job.description,
+          job.vendorName,
+          job.serviceType,
+          job.workOrderId,
+        ],
+        jobSearch,
+      ),
   );
   const filteredSites = appState.sites.filter((site) =>
-      searchMatches(
-        [
-          site.name,
-          site.client,
-          site.address,
-          site.streetAddress,
-          site.city,
-          site.state,
-          site.zip,
-          site.status,
-          site.siteNumber,
-          Array.isArray(site.serviceTypes) ? site.serviceTypes.join(", ") : site.serviceTypes,
-          site.assignedVendorName,
-          site.internalNotes,
-          site.notes,
-          site.contactName,
-          site.contactPhone,
-          site.contactEmail,
-        ],
-        siteSearch
-      )
-    );
+    searchMatches(
+      [
+        site.name,
+        site.client,
+        site.address,
+        site.streetAddress,
+        site.city,
+        site.state,
+        site.zip,
+        site.status,
+        site.siteNumber,
+        Array.isArray(site.serviceTypes)
+          ? site.serviceTypes.join(", ")
+          : site.serviceTypes,
+        site.assignedVendorName,
+        site.internalNotes,
+        site.notes,
+        site.contactName,
+        site.contactPhone,
+        site.contactEmail,
+      ],
+      siteSearch,
+    ),
+  );
   const filteredCrews = normalizedVendors.filter((vendor) =>
-      searchMatches(
-        [vendor.name, vendor.companyName, vendor.contactName, vendor.phone, vendor.email, vendor.address, vendor.serviceType, vendor.serviceTypes.join(", "), vendor.states.join(", ")],
-        crewSearch
-      )
-    );
+    searchMatches(
+      [
+        vendor.name,
+        vendor.companyName,
+        vendor.contactName,
+        vendor.phone,
+        vendor.email,
+        vendor.address,
+        vendor.serviceType,
+        vendor.serviceTypes.join(", "),
+        vendor.states.join(", "),
+      ],
+      crewSearch,
+    ),
+  );
   const filteredProposals = sortByNewest(
     appState.proposals.filter((proposal) => {
-      const workOrder = appState.workOrders.find((entry) => entry.id === proposal.workOrderId);
-      const matchesStatus = proposalStatusFilter === "All" || proposal.status === proposalStatusFilter;
+      const workOrder = appState.workOrders.find(
+        (entry) => entry.id === proposal.workOrderId,
+      );
+      const matchesStatus =
+        proposalStatusFilter === "All" ||
+        proposal.status === proposalStatusFilter;
       if (!matchesStatus) return false;
       return searchMatches(
         [
@@ -4155,15 +5080,16 @@ function AppBuild03() {
           workOrder?.siteName,
           workOrder?.amsWorkOrderNumber,
         ],
-        proposalSearch
+        proposalSearch,
       );
     }),
-    "submittedAt"
+    "submittedAt",
   );
   const filteredInvoices = sortByNewest(
     appState.invoices.filter(
       (invoice) =>
-        (invoiceStatusFilter === "All" || normalizeInvoiceStatus(invoice.status) === invoiceStatusFilter) &&
+        (invoiceStatusFilter === "All" ||
+          normalizeInvoiceStatus(invoice.status) === invoiceStatusFilter) &&
         searchMatches(
           [
             invoice.invoiceNumber,
@@ -4173,25 +5099,36 @@ function AppBuild03() {
             invoice.status,
             invoice.notes,
           ],
-          invoiceSearch
-        )
+          invoiceSearch,
+        ),
     ),
-    "submittedAt"
+    "submittedAt",
   );
   const readyForInvoiceJobs = appState.jobs.filter(
-    (job) => job.status === "Completed" && !getInvoiceForJob(appState.invoices, job.id)
+    (job) =>
+      job.status === "Completed" &&
+      !getInvoiceForJob(appState.invoices, job.id),
   );
-  const jobsMissingSell = appState.jobs.filter((job) => getPricingStatus(job) === "not_set");
+  const jobsMissingSell = appState.jobs.filter(
+    (job) => getPricingStatus(job) === "not_set",
+  );
   const selectedSiteServiceLog = selectedSite
     ? sortByNewest(
         appState.jobs
-          .filter((job) => job.siteId === selectedSite.id && ["Completed", "Invoiced", "Closed"].includes(job.status))
+          .filter(
+            (job) =>
+              job.siteId === selectedSite.id &&
+              ["Completed", "Invoiced", "Closed"].includes(job.status),
+          )
           .map((job) => ({
             ...job,
-            workOrder: appState.workOrders.find((workOrder) => workOrder.id === job.workOrderId) || null,
+            workOrder:
+              appState.workOrders.find(
+                (workOrder) => workOrder.id === job.workOrderId,
+              ) || null,
             invoice: getInvoiceForJob(appState.invoices, job.id) || null,
           })),
-        "completedAt"
+        "completedAt",
       )
     : [];
   const selectedSiteNeedsActionCount = getSiteNeedsActionCount({
@@ -4203,26 +5140,47 @@ function AppBuild03() {
   });
 
   const selectedWorkOrder =
-    appState.workOrders.find((workOrder) => workOrder.id === selectedWorkOrderId) || filteredWorkOrders[0] || null;
+    appState.workOrders.find(
+      (workOrder) => workOrder.id === selectedWorkOrderId,
+    ) ||
+    filteredWorkOrders[0] ||
+    null;
   const selectedWorkOrderJob = selectedWorkOrder
-    ? appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id) || null
+    ? appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id) ||
+      null
     : null;
-  const selectedJob = appState.jobs.find((job) => job.id === selectedJobId) || filteredJobs[0] || null;
-  const selectedCrew = normalizedVendors.find((vendor) => vendor.id === selectedCrewId) || filteredCrews[0] || null;
-  const selectedProposal = appState.proposals.find((proposal) => proposal.id === selectedProposalId) || filteredProposals[0] || null;
-  const selectedInvoice = appState.invoices.find((invoice) => invoice.id === selectedInvoiceId) || filteredInvoices[0] || null;
-  const selectedInvoiceJob = selectedInvoice ? appState.jobs.find((job) => job.id === selectedInvoice.jobId) || null : null;
+  const selectedJob =
+    appState.jobs.find((job) => job.id === selectedJobId) ||
+    filteredJobs[0] ||
+    null;
+  const selectedCrew =
+    normalizedVendors.find((vendor) => vendor.id === selectedCrewId) ||
+    filteredCrews[0] ||
+    null;
+  const selectedProposal =
+    appState.proposals.find((proposal) => proposal.id === selectedProposalId) ||
+    filteredProposals[0] ||
+    null;
+  const selectedInvoice =
+    appState.invoices.find((invoice) => invoice.id === selectedInvoiceId) ||
+    filteredInvoices[0] ||
+    null;
+  const selectedInvoiceJob = selectedInvoice
+    ? appState.jobs.find((job) => job.id === selectedInvoice.jobId) || null
+    : null;
   const selectedCrewInvoiceRecord =
-    crewSubmittedInvoices.find(({ invoice }) => invoice.id === selectedInvoiceId) ||
+    crewSubmittedInvoices.find(
+      ({ invoice }) => invoice.id === selectedInvoiceId,
+    ) ||
     crewSubmittedInvoices[0] ||
     null;
   const amsTeamMembers = sortByNewest(
     appState.users.filter((user) => AMS_ROLES.includes(user.role)),
-    "name"
+    "name",
   );
   const ownerVisibleUsers = sortByNewest(
     appState.users.filter((user) => user.role !== ROLES.OWNER),
-    "name"
+    "name",
   );
   const platformCompanies = [
     {
@@ -4236,7 +5194,8 @@ function AppBuild03() {
       id: "company-ams",
       name: "Advanced Maintenance Services",
       type: "Customer",
-      users: appState.users.filter((user) => AMS_ROLES.includes(user.role)).length,
+      users: appState.users.filter((user) => AMS_ROLES.includes(user.role))
+        .length,
       sites: appState.sites.length,
     },
   ];
@@ -4248,16 +5207,29 @@ function AppBuild03() {
     { key: "inactive", label: "Inactive / No Threat" },
   ];
   const selectedWorkOrderProposals = selectedWorkOrder
-    ? sortByNewest(appState.proposals.filter((proposal) => proposal.workOrderId === selectedWorkOrder.id), "submittedAt")
+    ? sortByNewest(
+        appState.proposals.filter(
+          (proposal) => proposal.workOrderId === selectedWorkOrder.id,
+        ),
+        "submittedAt",
+      )
     : [];
   const selectedWorkOrderProposal =
-    selectedWorkOrderProposals.find((proposal) => proposal.id === selectedProposalId) ||
+    selectedWorkOrderProposals.find(
+      (proposal) => proposal.id === selectedProposalId,
+    ) ||
     selectedWorkOrderProposals[0] ||
     null;
-  const selectedWorkOrderBidderNames = selectedWorkOrderProposals.map((proposal) => proposal.vendorCompanyName);
+  const selectedWorkOrderBidderNames = selectedWorkOrderProposals.map(
+    (proposal) => proposal.vendorCompanyName,
+  );
 
   useEffect(() => {
-    if (!filteredWorkOrders.some((workOrder) => workOrder.id === selectedWorkOrderId)) {
+    if (
+      !filteredWorkOrders.some(
+        (workOrder) => workOrder.id === selectedWorkOrderId,
+      )
+    ) {
       setSelectedWorkOrderId(filteredWorkOrders[0]?.id || null);
     }
   }, [filteredWorkOrders, selectedWorkOrderId]);
@@ -4269,7 +5241,10 @@ function AppBuild03() {
   }, [filteredJobs, selectedJobId]);
 
   useEffect(() => {
-    if (!filteredSites.some((site) => site.id === appState.ui.selectedSiteId) && filteredSites[0]?.id) {
+    if (
+      !filteredSites.some((site) => site.id === appState.ui.selectedSiteId) &&
+      filteredSites[0]?.id
+    ) {
       setSelectedSite(filteredSites[0].id);
     }
   }, [filteredSites]);
@@ -4287,7 +5262,9 @@ function AppBuild03() {
   }, [filteredCrews, selectedCrewId]);
 
   useEffect(() => {
-    if (!filteredProposals.some((proposal) => proposal.id === selectedProposalId)) {
+    if (
+      !filteredProposals.some((proposal) => proposal.id === selectedProposalId)
+    ) {
       setSelectedProposalId(filteredProposals[0]?.id || null);
     }
   }, [filteredProposals, selectedProposalId]);
@@ -4303,19 +5280,34 @@ function AppBuild03() {
   }, [filteredInvoices, selectedInvoiceId]);
 
   useEffect(() => {
-    const proposalForReview = activeScreen === "workOrders" ? selectedWorkOrderProposal : selectedProposal;
+    const proposalForReview =
+      activeScreen === "workOrders"
+        ? selectedWorkOrderProposal
+        : selectedProposal;
     if (!proposalForReview) {
       setReviewForm({ reviewedPrice: "", amsNotes: "" });
       return;
     }
     setReviewForm({
-      reviewedPrice: proposalForReview.reviewedPrice || proposalForReview.submittedPrice || "",
+      reviewedPrice:
+        proposalForReview.reviewedPrice ||
+        proposalForReview.submittedPrice ||
+        "",
       amsNotes: proposalForReview.amsNotes || "",
     });
-    if (activeScreen === "proposals" && selectedProposal && selectedProposal.workOrderId !== selectedWorkOrderId) {
+    if (
+      activeScreen === "proposals" &&
+      selectedProposal &&
+      selectedProposal.workOrderId !== selectedWorkOrderId
+    ) {
       setSelectedWorkOrderId(selectedProposal.workOrderId);
     }
-  }, [activeScreen, selectedProposal, selectedWorkOrderProposal, selectedWorkOrderId]);
+  }, [
+    activeScreen,
+    selectedProposal,
+    selectedWorkOrderProposal,
+    selectedWorkOrderId,
+  ]);
 
   useEffect(() => {
     if (!selectedWorkOrder) {
@@ -4329,7 +5321,9 @@ function AppBuild03() {
     }
     setWorkOrderDetailForm({
       externalWorkOrderNumber: selectedWorkOrder.externalWorkOrderNumber || "",
-      requireBeforeAfterPhotos: Boolean(selectedWorkOrder.requireBeforeAfterPhotos),
+      requireBeforeAfterPhotos: Boolean(
+        selectedWorkOrder.requireBeforeAfterPhotos,
+      ),
       recurringVendorCost: selectedWorkOrder.recurringVendorCost ?? "",
       recurringPricingNotes: selectedWorkOrder.recurringPricingNotes || "",
     });
@@ -4339,7 +5333,9 @@ function AppBuild03() {
     if (!selectedWorkOrderJob) return;
     setJobSellDrafts((current) => ({
       ...current,
-      [selectedWorkOrderJob.id]: current[selectedWorkOrderJob.id] ?? getJobSellValue(selectedWorkOrderJob),
+      [selectedWorkOrderJob.id]:
+        current[selectedWorkOrderJob.id] ??
+        getJobSellValue(selectedWorkOrderJob),
     }));
   }, [selectedWorkOrderJob]);
 
@@ -4354,7 +5350,16 @@ function AppBuild03() {
         terms: "Net 30",
         notes: "",
         status: "Submitted",
-        lineItems: [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
+        lineItems: [
+          {
+            id: "line-1",
+            service: "",
+            description: "",
+            qty: "1",
+            rate: "",
+            amount: "",
+          },
+        ],
       });
       return;
     }
@@ -4369,9 +5374,18 @@ function AppBuild03() {
       status: normalizeInvoiceStatus(selectedInvoice.status),
       lineItems: selectedInvoice.lineItems?.length
         ? selectedInvoice.lineItems
-        : [{ id: "line-1", service: "", description: "", qty: "1", rate: "", amount: "" }],
-      });
-    }, [selectedInvoice]);
+        : [
+            {
+              id: "line-1",
+              service: "",
+              description: "",
+              qty: "1",
+              rate: "",
+              amount: "",
+            },
+          ],
+    });
+  }, [selectedInvoice]);
 
   useEffect(() => {
     if (!selectedJob) return;
@@ -4407,7 +5421,8 @@ function AppBuild03() {
       state: currentUser.state || "",
       zip: currentUser.zip || "",
       internalNotes: currentUser.internalNotes || "",
-      profilePhotoStatus: currentUser.profilePhotoStatus || "Photo Upload Coming Soon",
+      profilePhotoStatus:
+        currentUser.profilePhotoStatus || "Photo Upload Coming Soon",
     });
     setProfilePasswordError("");
   }, [currentUser]);
@@ -4427,50 +5442,113 @@ function AppBuild03() {
   }, [currentCompanyProfile]);
 
   const amsQuickActions = [
-    { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
-    { key: "refresh", label: dataRefreshLoading ? "Refreshing..." : "Refresh", onClick: () => refreshFirestoreData() },
-    { key: "createWorkOrder", label: "Create Work Order", onClick: () => openModal("workOrder"), featured: true },
-    { key: "workOrders", label: "Work Orders", onClick: () => openScreen("workOrders") },
+    {
+      key: "dashboard",
+      label: "Dashboard",
+      onClick: () => openScreen("dashboard"),
+    },
+    {
+      key: "refresh",
+      label: dataRefreshLoading ? "Refreshing..." : "Refresh",
+      onClick: () => refreshFirestoreData(),
+    },
+    {
+      key: "createWorkOrder",
+      label: "Create Work Order",
+      onClick: () => openModal("workOrder"),
+      featured: true,
+    },
+    {
+      key: "workOrders",
+      label: "Work Orders",
+      onClick: () => openScreen("workOrders"),
+    },
     { key: "jobs", label: "Jobs", onClick: () => openScreen("jobs") },
     { key: "sites", label: "Sites", onClick: () => openScreen("sites") },
-    { key: "vendors", label: SCREEN_LABELS.vendors, onClick: () => openScreen("vendors") },
-    { key: "proposals", label: "Proposals", onClick: () => openScreen("proposals") },
-    { key: "accounting", label: "Accounting", onClick: () => openScreen("accounting") },
+    {
+      key: "vendors",
+      label: SCREEN_LABELS.vendors,
+      onClick: () => openScreen("vendors"),
+    },
+    {
+      key: "proposals",
+      label: "Proposals",
+      onClick: () => openScreen("proposals"),
+    },
+    {
+      key: "accounting",
+      label: "Accounting",
+      onClick: () => openScreen("accounting"),
+    },
   ];
   const crewQuickActions = [
-    { key: "dashboard", label: "Dashboard", onClick: () => openScreen("dashboard") },
-    { key: "refresh", label: dataRefreshLoading ? "Refreshing..." : "Refresh", onClick: () => refreshFirestoreData() },
-    { key: "availableWork", label: "Available Work", onClick: () => openScreen("availableWork") },
+    {
+      key: "dashboard",
+      label: "Dashboard",
+      onClick: () => openScreen("dashboard"),
+    },
+    {
+      key: "refresh",
+      label: dataRefreshLoading ? "Refreshing..." : "Refresh",
+      onClick: () => refreshFirestoreData(),
+    },
+    {
+      key: "availableWork",
+      label: "Available Work",
+      onClick: () => openScreen("availableWork"),
+    },
     { key: "myJobs", label: "My Jobs", onClick: () => openScreen("myJobs") },
     { key: "mySites", label: "My Sites", onClick: () => openScreen("mySites") },
-    { key: "myProposals", label: "My Proposals", onClick: () => openScreen("myProposals") },
-    { key: "myInvoices", label: "My Invoices", onClick: () => openScreen("myInvoices") },
+    {
+      key: "myProposals",
+      label: "My Proposals",
+      onClick: () => openScreen("myProposals"),
+    },
+    {
+      key: "myInvoices",
+      label: "My Invoices",
+      onClick: () => openScreen("myInvoices"),
+    },
   ];
   const quickActions = isCrewUser(currentUser)
     ? crewQuickActions
     : AMS_ROLES.includes(currentUser?.role)
-    ? amsQuickActions
-    : [];
+      ? amsQuickActions
+      : [];
   const weatherSummary = weatherSummaryConfig.map((item) => ({
     ...item,
-    value: weatherCommandState.filter((site) => site.status === item.key).length,
+    value: weatherCommandState.filter((site) => site.status === item.key)
+      .length,
   }));
 
   const renderProposalDecision = (proposal, workOrder) => {
     if (!proposal) {
-      return <EmptyState title="No proposal selected" text="Select a proposal to review." />;
+      return (
+        <EmptyState
+          title="No proposal selected"
+          text="Select a proposal to review."
+        />
+      );
     }
     const proposalStatus = normalizeProposalStatus(proposal.status);
-    const proposalJob = workOrder ? appState.jobs.find((job) => job.workOrderId === workOrder.id) : null;
+    const proposalJob = workOrder
+      ? appState.jobs.find((job) => job.workOrderId === workOrder.id)
+      : null;
     const approvedProposalForWorkOrder = appState.proposals.find(
-      (entry) => entry.workOrderId === proposal.workOrderId && normalizeProposalStatus(entry.status) === "approved"
+      (entry) =>
+        entry.workOrderId === proposal.workOrderId &&
+        normalizeProposalStatus(entry.status) === "approved",
     );
     const isApproved = proposalStatus === "approved";
-    const isDecisionPending = ["submitted", "revision_requested"].includes(proposalStatus);
+    const isDecisionPending = ["submitted", "revision_requested"].includes(
+      proposalStatus,
+    );
     const isAssignedToAnotherProposal =
       !isApproved &&
-      ((approvedProposalForWorkOrder && approvedProposalForWorkOrder.id !== proposal.id) ||
-        (hasAssignedValue(workOrder?.assignedVendorId) && workOrder.assignedVendorId !== proposal.vendorId));
+      ((approvedProposalForWorkOrder &&
+        approvedProposalForWorkOrder.id !== proposal.id) ||
+        (hasAssignedValue(workOrder?.assignedVendorId) &&
+          workOrder.assignedVendorId !== proposal.vendorId));
     const canApprove = isDecisionPending && !isAssignedToAnotherProposal;
     const canCancelJob =
       isApproved &&
@@ -4478,38 +5556,104 @@ function AppBuild03() {
       proposalJob.status === "Assigned" &&
       !proposalJob.startTime &&
       !proposalJob.completedAt &&
-      !["In Progress", "Completed", "Invoiced", "Closed", "Canceled"].includes(proposalJob.status);
+      !["In Progress", "Completed", "Invoiced", "Closed", "Canceled"].includes(
+        proposalJob.status,
+      );
 
     return (
       <div className="proposal-decision-card">
         <div className="proposal-decision-header">
           <div>
             <strong>{proposal.vendorCompanyName}</strong>
-            <p>Submitted {formatDate(proposal.submittedAt)} � Revision {proposal.revisionCount}</p>
+            <p>
+              Submitted {formatDate(proposal.submittedAt)} � Revision{" "}
+              {proposal.revisionCount}
+            </p>
           </div>
           <ProposalStatusBadge value={proposal.status} />
         </div>
         <div className="proposal-summary-grid">
-          <div><span className="detail-label">AMS Work Order</span><p>{workOrder?.amsWorkOrderNumber || "Not available"}</p></div>
-          <div><span className="detail-label">Site</span><p>{workOrder?.siteName || "Unknown site"}</p></div>
-          <div><span className="detail-label">Submitted Cost</span><p>{formatMoney(proposal.submittedPrice)}</p></div>
-          <div><span className="detail-label">Submitted Notes</span><p>{proposal.submittedNotes || "No submitted notes."}</p></div>
+          <div>
+            <span className="detail-label">AMS Work Order</span>
+            <p>{workOrder?.amsWorkOrderNumber || "Not available"}</p>
+          </div>
+          <div>
+            <span className="detail-label">Site</span>
+            <p>{workOrder?.siteName || "Unknown site"}</p>
+          </div>
+          <div>
+            <span className="detail-label">Submitted Cost</span>
+            <p>{formatMoney(proposal.submittedPrice)}</p>
+          </div>
+          <div>
+            <span className="detail-label">Submitted Notes</span>
+            <p>{proposal.submittedNotes || "No submitted notes."}</p>
+          </div>
         </div>
         <InputRow>
-          <Field label="Reviewed Price"><input value={reviewForm.reviewedPrice} onChange={(event) => updateProposalReviewField("reviewedPrice", event.target.value)} /></Field>
-          <Field label="AMS Notes"><textarea rows="4" value={reviewForm.amsNotes} onChange={(event) => updateProposalReviewField("amsNotes", event.target.value)} /></Field>
+          <Field label="Reviewed Price">
+            <input
+              value={reviewForm.reviewedPrice}
+              onChange={(event) =>
+                updateProposalReviewField("reviewedPrice", event.target.value)
+              }
+            />
+          </Field>
+          <Field label="AMS Notes">
+            <textarea
+              rows="4"
+              value={reviewForm.amsNotes}
+              onChange={(event) =>
+                updateProposalReviewField("amsNotes", event.target.value)
+              }
+            />
+          </Field>
         </InputRow>
-        {proposalSaveNotice ? <div className={`inline-notice ${proposalSaveNotice.type}`}>{proposalSaveNotice.message}</div> : null}
+        {proposalSaveNotice ? (
+          <div className={`inline-notice ${proposalSaveNotice.type}`}>
+            {proposalSaveNotice.message}
+          </div>
+        ) : null}
         <div className="decision-actions">
-          {isDecisionPending ? <button className="secondary-button" onClick={() => handleSaveProposalChanges(proposal)}>Save Changes</button> : null}
-          {isDecisionPending ? <button className="secondary-button" onClick={() => handleRequestRevision(proposal)}>Request Revision</button> : null}
           {isDecisionPending ? (
-            <button className="secondary-button danger-button" onClick={() => handleRejectProposal(proposal)}>Reject</button>
+            <button
+              className="secondary-button"
+              onClick={() => handleSaveProposalChanges(proposal)}
+            >
+              Save Changes
+            </button>
+          ) : null}
+          {isDecisionPending ? (
+            <button
+              className="secondary-button"
+              onClick={() => handleRequestRevision(proposal)}
+            >
+              Request Revision
+            </button>
+          ) : null}
+          {isDecisionPending ? (
+            <button
+              className="secondary-button danger-button"
+              onClick={() => handleRejectProposal(proposal)}
+            >
+              Reject
+            </button>
           ) : null}
           {canCancelJob ? (
-            <button className="secondary-button danger-button" onClick={() => cancelJobForWorkOrder(workOrder, proposalJob)}>Cancel Job</button>
+            <button
+              className="secondary-button danger-button"
+              onClick={() => cancelJobForWorkOrder(workOrder, proposalJob)}
+            >
+              Cancel Job
+            </button>
           ) : null}
-          <button className="primary-button" disabled={!canApprove} onClick={() => handleApproveProposal(proposal)}>Approve</button>
+          <button
+            className="primary-button"
+            disabled={!canApprove}
+            onClick={() => handleApproveProposal(proposal)}
+          >
+            Approve
+          </button>
         </div>
       </div>
     );
@@ -4518,19 +5662,54 @@ function AppBuild03() {
   const ownerDashboard = (
     <div className="screen-grid">
       <PageSection title="Owner Overview">
-        <StatGrid items={[
-          { label: "Companies", value: platformCompanies.length, onClick: () => openScreen("companies") },
-          { label: "Managed Users", value: ownerVisibleUsers.length, onClick: () => openScreen("users") },
-          { label: "Operational Sites", value: appState.sites.length, onClick: () => openScreen("companies") },
-          { label: "Platform Alerts", value: appState.invoices.filter((invoice) => invoice.status === "Rejected").length, onClick: () => openScreen("platformStatus") },
-        ]} />
+        <StatGrid
+          items={[
+            {
+              label: "Companies",
+              value: platformCompanies.length,
+              onClick: () => openScreen("companies"),
+            },
+            {
+              label: "Managed Users",
+              value: ownerVisibleUsers.length,
+              onClick: () => openScreen("users"),
+            },
+            {
+              label: "Operational Sites",
+              value: appState.sites.length,
+              onClick: () => openScreen("companies"),
+            },
+            {
+              label: "Platform Alerts",
+              value: appState.invoices.filter(
+                (invoice) => invoice.status === "Rejected",
+              ).length,
+              onClick: () => openScreen("platformStatus"),
+            },
+          ]}
+        />
       </PageSection>
       <PageSection title="Platform Snapshot">
         <div className="proposal-summary-grid">
-          <div><span className="detail-label">Brand Layer</span><p>SparkCommand Systems</p></div>
-          <div><span className="detail-label">Customer Layer</span><p>Advanced Maintenance Services</p></div>
-          <div><span className="detail-label">Operational Records</span><p>{appState.workOrders.length} work orders / {appState.jobs.length} jobs / {appState.invoices.length} invoices</p></div>
-          <div><span className="detail-label">Owner Visibility</span><p>Hidden from AMS and Crew menus</p></div>
+          <div>
+            <span className="detail-label">Brand Layer</span>
+            <p>SparkCommand Systems</p>
+          </div>
+          <div>
+            <span className="detail-label">Customer Layer</span>
+            <p>Advanced Maintenance Services</p>
+          </div>
+          <div>
+            <span className="detail-label">Operational Records</span>
+            <p>
+              {appState.workOrders.length} work orders / {appState.jobs.length}{" "}
+              jobs / {appState.invoices.length} invoices
+            </p>
+          </div>
+          <div>
+            <span className="detail-label">Owner Visibility</span>
+            <p>Hidden from AMS and Crew menus</p>
+          </div>
         </div>
       </PageSection>
     </div>
@@ -4540,18 +5719,60 @@ function AppBuild03() {
     <div className="screen-grid">
       <div className="ams-dashboard-grid">
         <PageSection title="Operations Snapshot">
-          <StatGrid items={[
-            { label: "Open Work Orders", value: openWorkOrders.length, onClick: () => openScreen("workOrders") },
-            { label: "Proposal Opportunities", value: proposalOpportunities.length, onClick: () => openScreen("proposals") },
-            { label: "Active Jobs", value: appState.jobs.filter((entry) => entry.status !== "Completed").length, onClick: () => openScreen("jobs") },
-            { label: "Proposals Awaiting Review", value: proposalsAwaitingDecision.length, onClick: () => openScreen("proposals") },
-            { label: "Invoices Awaiting Review", value: invoicesAwaitingReview.length, onClick: () => openScreen("accounting") },
-            { label: "Paid Invoices", value: paidInvoices.length, onClick: () => openScreen("accounting") },
-          ]} />
+          <StatGrid
+            items={[
+              {
+                label: "Open Work Orders",
+                value: openWorkOrders.length,
+                onClick: () => openScreen("workOrders"),
+              },
+              {
+                label: "Proposal Opportunities",
+                value: proposalOpportunities.length,
+                onClick: () => openScreen("proposals"),
+              },
+              {
+                label: "Active Jobs",
+                value: appState.jobs.filter(
+                  (entry) => entry.status !== "Completed",
+                ).length,
+                onClick: () => openScreen("jobs"),
+              },
+              {
+                label: "Proposals Awaiting Review",
+                value: proposalsAwaitingDecision.length,
+                onClick: () => openScreen("proposals"),
+              },
+              {
+                label: "Invoices Awaiting Review",
+                value: invoicesAwaitingReview.length,
+                onClick: () => openScreen("accounting"),
+              },
+              {
+                label: "Paid Invoices",
+                value: paidInvoices.length,
+                onClick: () => openScreen("accounting"),
+              },
+            ]}
+          />
         </PageSection>
         <PageSection title="Command Map">
-          <CommandMap sites={appState.sites} selectedSiteId={selectedSite?.id} onSelectSite={setSelectedSite} />
-          <SiteDetailsCard site={selectedSite} relatedWorkOrderCount={selectedSite ? appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length : 0} needsActionCount={selectedSiteNeedsActionCount} />
+          <CommandMap
+            sites={appState.sites}
+            selectedSiteId={selectedSite?.id}
+            onSelectSite={setSelectedSite}
+          />
+          <SiteDetailsCard
+            site={selectedSite}
+            relatedWorkOrderCount={
+              selectedSite
+                ? appState.workOrders.filter(
+                    (workOrder) => workOrder.siteId === selectedSite.id,
+                  ).length
+                : 0
+            }
+            needsActionCount={selectedSiteNeedsActionCount}
+          />
         </PageSection>
       </div>
     </div>
@@ -4559,135 +5780,493 @@ function AppBuild03() {
 
   const crewAvailableWorkSection = (
     <PageSection title="Available Work">
-      {!crewOpportunityDataReady ? <div className="inline-notice info">Loading available work...</div> : null}
-      {workOrdersError ? <div className="inline-notice error">Available work could not load work orders: {workOrdersError}</div> : null}
-      {vendorsError ? <div className="inline-notice error">Available work could not load Crew company profile: {vendorsError}</div> : null}
-      {jobsError ? <div className="inline-notice error">Available work could not verify assigned jobs: {jobsError}</div> : null}
-      {proposalsError ? <div className="inline-notice error">Available work could not verify proposals: {proposalsError}</div> : null}
+      {!crewOpportunityDataReady ? (
+        <div className="inline-notice info">Loading available work...</div>
+      ) : null}
+      {workOrdersError ? (
+        <div className="inline-notice error">
+          Available work could not load work orders: {workOrdersError}
+        </div>
+      ) : null}
+      {vendorsError ? (
+        <div className="inline-notice error">
+          Available work could not load Crew company profile: {vendorsError}
+        </div>
+      ) : null}
+      {jobsError ? (
+        <div className="inline-notice error">
+          Available work could not verify assigned jobs: {jobsError}
+        </div>
+      ) : null}
+      {proposalsError ? (
+        <div className="inline-notice error">
+          Available work could not verify proposals: {proposalsError}
+        </div>
+      ) : null}
       {availableCrewWork.length ? (
         <div className="available-work-scroll contained-scroll">
           <div className="available-work-grid compact-opportunity-grid">
-          {availableCrewWork.map((workOrder) => {
-            const site = appState.sites.find((entry) => entry.id === workOrder.siteId);
-            const latestProposal = currentCrewRecord ? getLatestCrewProposal(appState.proposals, workOrder.id, currentCrewRecord.id) : null;
-            const timing = workOrder.seasonStart || workOrder.proposalRequestedAt || workOrder.createdAt;
-            return (
-              <article key={workOrder.id} className="available-work-card compact-opportunity-card">
-                <div className="available-work-top">
-                  <div>
-                    <strong>{workOrder.siteName}</strong>
-                    <p className="detail-muted">{workOrder.serviceType || "Service not specified"}</p>
+            {availableCrewWork.map((workOrder) => {
+              const site = appState.sites.find(
+                (entry) => entry.id === workOrder.siteId,
+              );
+              const latestProposal = currentCrewRecord
+                ? getLatestCrewProposal(
+                    appState.proposals,
+                    workOrder.id,
+                    currentCrewRecord.id,
+                  )
+                : null;
+              const timing =
+                workOrder.seasonStart ||
+                workOrder.proposalRequestedAt ||
+                workOrder.createdAt;
+              return (
+                <article
+                  key={workOrder.id}
+                  className="available-work-card compact-opportunity-card"
+                >
+                  <div className="available-work-top">
+                    <div>
+                      <strong>{workOrder.siteName}</strong>
+                      <p className="detail-muted">
+                        {workOrder.serviceType || "Service not specified"}
+                      </p>
+                    </div>
+                    <WorkOrderStatusBadge workOrder={workOrder} />
                   </div>
-                  <WorkOrderStatusBadge workOrder={workOrder} />
-                </div>
-                <div className="available-work-summary-grid">
-                  <div><span className="detail-label">State</span><p>{getWorkOrderDispatchState(workOrder, site) || "Unknown"}</p></div>
-                  <div><span className="detail-label">Timing</span><p>{timing ? formatDate(timing) : "Not set"}</p></div>
-                  <div><span className="detail-label">Opportunity</span><p><WorkOrderStatusBadge workOrder={workOrder} /></p></div>
-                  <div><span className="detail-label">Proposal</span><p>{latestProposal ? <ProposalStatusBadge value={latestProposal.status} /> : "Not submitted"}</p></div>
-                </div>
-                <div className="proposal-card-actions">
-                  <button className="secondary-button" onClick={() => hideCrewOpportunity(workOrder.id)}>Hide</button>
-                  <button className="primary-button" onClick={() => openCrewOpportunityDetails(workOrder.id)}>{latestProposal ? "View Details" : "Open Opportunity"}</button>
-                </div>
-              </article>
-            );
-          })}
+                  <div className="available-work-summary-grid">
+                    <div>
+                      <span className="detail-label">State</span>
+                      <p>
+                        {getWorkOrderDispatchState(workOrder, site) ||
+                          "Unknown"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Timing</span>
+                      <p>{timing ? formatDate(timing) : "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Opportunity</span>
+                      <p>
+                        <WorkOrderStatusBadge workOrder={workOrder} />
+                      </p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Proposal</span>
+                      <p>
+                        {latestProposal ? (
+                          <ProposalStatusBadge value={latestProposal.status} />
+                        ) : (
+                          "Not submitted"
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="proposal-card-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() => hideCrewOpportunity(workOrder.id)}
+                    >
+                      Hide
+                    </button>
+                    <button
+                      className="primary-button"
+                      onClick={() => openCrewOpportunityDetails(workOrder.id)}
+                    >
+                      {latestProposal ? "View Details" : "Open Opportunity"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
-      ) : !crewOpportunityDataReady ? null : <EmptyState title="No available work" text={crewAvailableWorkEmptyText || "New matching proposal opportunities will appear here."} />}
+      ) : !crewOpportunityDataReady ? null : (
+        <EmptyState
+          title="No available work"
+          text={
+            crewAvailableWorkEmptyText ||
+            "New matching proposal opportunities will appear here."
+          }
+        />
+      )}
     </PageSection>
   );
 
   const crewJobsSection = (
-      <PageSection title="My Jobs">
-        <div className="detail-stack">
-          <PageSection title="Active Jobs">
-            {activeCrewJobs.length ? <div className="job-card-grid">{activeCrewJobs.map((job) => <JobCard key={job.id} job={job} onStart={(jobId) => openJobConfirmation("start", jobId)} onComplete={(jobId) => openJobConfirmation("complete", jobId)} />)}</div> : <EmptyState title="No active jobs" text="Assigned active jobs will appear here." />}
-          </PageSection>
-          <PageSection title="Completed Jobs">
-            <div className="list-stack">
-              <SearchBar value={crewCompletedJobSearch} onChange={setCrewCompletedJobSearch} placeholder="Search completed jobs" />
-              <div className="list-scroll compact-scroll contained-scroll">
-                <DataTable
-                  columns={[
-                    { key: "site", label: "Site Name", render: (row) => row.siteName },
-                    { key: "reference", label: "Job / WO Ref", render: (row) => `${row.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
-                    { key: "serviceDate", label: "Service Date", render: (row) => formatDate(row.serviceDate || row.completedTime) },
-                    { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) },
-                    { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedTime) },
-                    { key: "service", label: "Service Performed", render: (row) => row.servicePerformed || row.serviceType }, { key: "workType", label: "Work Type", render: (row) => getWorkTypeLabel(row.workType) },
-                    { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" },
-                    { key: "notes", label: "Notes", render: (row) => row.notes || "No notes" },
-                    { key: "wo", label: "AMS Work Order", render: (row) => appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available" },
-                    { key: "invoice", label: "Invoice Status", render: (row) => getInvoiceForJob(appState.invoices, row.id)?.status || "Not Invoiced" },
-                    {
-                      key: "action",
-                      label: "Invoice",
-                      render: (row) => {
-                        const invoice = getInvoiceForJob(appState.invoices, row.id);
-                        if (invoice) {
-                          return (
-                            <button
-                              className="secondary-button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setSelectedInvoiceId(invoice.id);
-                                openScreen("myInvoices");
-                              }}
-                            >
-                              View Invoice
-                            </button>
-                          );
-                        }
-
-                        if (row.status !== "Completed") {
-                          return <span className="detail-muted">{row.status}</span>;
-                        }
-
+    <PageSection title="My Jobs">
+      <div className="detail-stack">
+        <PageSection title="Active Jobs">
+          {activeCrewJobs.length ? (
+            <div className="job-card-grid">
+              {activeCrewJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onStart={(jobId) => openJobConfirmation("start", jobId)}
+                  onComplete={(jobId) => openJobConfirmation("complete", jobId)}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No active jobs"
+              text="Assigned active jobs will appear here."
+            />
+          )}
+        </PageSection>
+        <PageSection title="Completed Jobs">
+          <div className="list-stack">
+            <SearchBar
+              value={crewCompletedJobSearch}
+              onChange={setCrewCompletedJobSearch}
+              placeholder="Search completed jobs"
+            />
+            <div className="list-scroll compact-scroll contained-scroll">
+              <DataTable
+                columns={[
+                  {
+                    key: "site",
+                    label: "Site Name",
+                    render: (row) => row.siteName,
+                  },
+                  {
+                    key: "reference",
+                    label: "Job / WO Ref",
+                    render: (row) =>
+                      `${row.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                  },
+                  {
+                    key: "serviceDate",
+                    label: "Service Date",
+                    render: (row) =>
+                      formatDate(row.serviceDate || row.completedTime),
+                  },
+                  {
+                    key: "start",
+                    label: "Start Time",
+                    render: (row) => formatDate(row.startTime),
+                  },
+                  {
+                    key: "end",
+                    label: "Completion Time",
+                    render: (row) => formatDate(row.completedTime),
+                  },
+                  {
+                    key: "service",
+                    label: "Service Performed",
+                    render: (row) => row.servicePerformed || row.serviceType,
+                  },
+                  {
+                    key: "workType",
+                    label: "Work Type",
+                    render: (row) => getWorkTypeLabel(row.workType),
+                  },
+                  {
+                    key: "scope",
+                    label: "Scope",
+                    render: (row) =>
+                      row.scope || row.description || "No scope notes",
+                  },
+                  {
+                    key: "notes",
+                    label: "Notes",
+                    render: (row) => row.notes || "No notes",
+                  },
+                  {
+                    key: "wo",
+                    label: "AMS Work Order",
+                    render: (row) =>
+                      appState.workOrders.find(
+                        (workOrder) => workOrder.id === row.workOrderId,
+                      )?.amsWorkOrderNumber || "Not available",
+                  },
+                  {
+                    key: "invoice",
+                    label: "Invoice Status",
+                    render: (row) =>
+                      getInvoiceForJob(appState.invoices, row.id)?.status ||
+                      "Not Invoiced",
+                  },
+                  {
+                    key: "action",
+                    label: "Invoice",
+                    render: (row) => {
+                      const invoice = getInvoiceForJob(
+                        appState.invoices,
+                        row.id,
+                      );
+                      if (invoice) {
                         return (
                           <button
-                            className="primary-button"
+                            className="secondary-button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              createInvoiceForJob(row);
+                              setSelectedInvoiceId(invoice.id);
+                              openScreen("myInvoices");
                             }}
                           >
-                            Submit Invoice
+                            View Invoice
                           </button>
                         );
-                      },
+                      }
+
+                      if (row.status !== "Completed") {
+                        return (
+                          <span className="detail-muted">{row.status}</span>
+                        );
+                      }
+
+                      return (
+                        <button
+                          className="primary-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            createInvoiceForJob(row);
+                          }}
+                        >
+                          Submit Invoice
+                        </button>
+                      );
                     },
-                  ]}
-                  rows={filteredCompletedCrewJobs}
-                  stickyHeader
-                  emptyTitle="No completed jobs"
-                  emptyText="Completed crew work will appear here."
-                />
-              </div>
+                  },
+                ]}
+                rows={filteredCompletedCrewJobs}
+                stickyHeader
+                emptyTitle="No completed jobs"
+                emptyText="Completed crew work will appear here."
+              />
             </div>
-          </PageSection>
-        </div>
-      </PageSection>
-    );
+          </div>
+        </PageSection>
+      </div>
+    </PageSection>
+  );
 
   const crewSitesSection = (
-      <PageSection title="My Sites">
-        <SplitView
-          list={<div className="list-stack"><SearchBar value={crewSiteSearch} onChange={setCrewSiteSearch} placeholder="Search my sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Site", render: (row) => row.name }, { key: "address", label: "Address", render: (row) => row.address }, { key: "visibility", label: "Visibility", render: (row) => row.assignedVendorId === currentCrewRecord?.id ? "Assigned site" : "Visible through job history" }]} rows={filteredCrewSites} selectedRowId={selectedCrewSite?.id} onRowClick={(row) => setSelectedCrewSiteId(row.id)} emptyTitle="No sites available" emptyText="Assigned site information will appear here." /></div></div>}
-          detail={selectedCrewSite ? <div className="detail-stack"><div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrewSite.name}</strong><p>{selectedCrewSite.address}</p></div><span className="site-state-tag">{selectedCrewSite.state}</span></div><div className="proposal-summary-grid"><div><span className="detail-label">Street Address</span><p>{selectedCrewSite.streetAddress || "Not set"}</p></div><div><span className="detail-label">City</span><p>{selectedCrewSite.city || "Not set"}</p></div><div><span className="detail-label">State</span><p>{selectedCrewSite.state || "Not set"}</p></div><div><span className="detail-label">ZIP Code</span><p>{selectedCrewSite.zip || "Not set"}</p></div></div></div><PageSection title="Site Service Report"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "date", label: "Date of Service", render: (row) => formatDate(row.serviceDate || row.completedTime) }, { key: "service", label: "Service Performed", render: (row) => row.servicePerformed || row.serviceType }, { key: "workType", label: "Work Type", render: (row) => getWorkTypeLabel(row.workType) }, { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) }, { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedTime) }, { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" }, { key: "notes", label: "Notes", render: (row) => row.notes || "No notes" }, { key: "wo", label: "AMS Work Order Number", render: (row) => row.workOrder?.amsWorkOrderNumber || "Not available" }, { key: "invoice", label: "Invoice Status", render: (row) => row.invoice?.status || "No invoice" }]} rows={selectedCrewSiteServiceLog} stickyHeader emptyTitle="No services recorded yet" emptyText="No services recorded yet" /></div></PageSection></div> : <EmptyState title="No site selected" text="Select a site to view details." />}
-        />
-      </PageSection>
-    );
+    <PageSection title="My Sites">
+      <SplitView
+        list={
+          <div className="list-stack">
+            <SearchBar
+              value={crewSiteSearch}
+              onChange={setCrewSiteSearch}
+              placeholder="Search my sites"
+            />
+            <div className="list-scroll">
+              <DataTable
+                columns={[
+                  { key: "name", label: "Site", render: (row) => row.name },
+                  {
+                    key: "address",
+                    label: "Address",
+                    render: (row) => row.address,
+                  },
+                  {
+                    key: "visibility",
+                    label: "Visibility",
+                    render: (row) =>
+                      row.assignedVendorId === currentCrewRecord?.id
+                        ? "Assigned site"
+                        : "Visible through job history",
+                  },
+                ]}
+                rows={filteredCrewSites}
+                selectedRowId={selectedCrewSite?.id}
+                onRowClick={(row) => setSelectedCrewSiteId(row.id)}
+                emptyTitle="No sites available"
+                emptyText="Assigned site information will appear here."
+              />
+            </div>
+          </div>
+        }
+        detail={
+          selectedCrewSite ? (
+            <div className="detail-stack">
+              <div className="detail-card">
+                <div className="proposal-summary-top">
+                  <div>
+                    <strong>{selectedCrewSite.name}</strong>
+                    <p>{selectedCrewSite.address}</p>
+                  </div>
+                  <span className="site-state-tag">
+                    {selectedCrewSite.state}
+                  </span>
+                </div>
+                <div className="proposal-summary-grid">
+                  <div>
+                    <span className="detail-label">Street Address</span>
+                    <p>{selectedCrewSite.streetAddress || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">City</span>
+                    <p>{selectedCrewSite.city || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">State</span>
+                    <p>{selectedCrewSite.state || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">ZIP Code</span>
+                    <p>{selectedCrewSite.zip || "Not set"}</p>
+                  </div>
+                </div>
+              </div>
+              <PageSection title="Site Service Report">
+                <div className="list-scroll compact-scroll contained-scroll">
+                  <DataTable
+                    columns={[
+                      {
+                        key: "date",
+                        label: "Date of Service",
+                        render: (row) =>
+                          formatDate(row.serviceDate || row.completedTime),
+                      },
+                      {
+                        key: "service",
+                        label: "Service Performed",
+                        render: (row) =>
+                          row.servicePerformed || row.serviceType,
+                      },
+                      {
+                        key: "workType",
+                        label: "Work Type",
+                        render: (row) => getWorkTypeLabel(row.workType),
+                      },
+                      {
+                        key: "start",
+                        label: "Start Time",
+                        render: (row) => formatDate(row.startTime),
+                      },
+                      {
+                        key: "end",
+                        label: "Completion Time",
+                        render: (row) => formatDate(row.completedTime),
+                      },
+                      {
+                        key: "scope",
+                        label: "Scope",
+                        render: (row) =>
+                          row.scope || row.description || "No scope notes",
+                      },
+                      {
+                        key: "notes",
+                        label: "Notes",
+                        render: (row) => row.notes || "No notes",
+                      },
+                      {
+                        key: "wo",
+                        label: "AMS Work Order Number",
+                        render: (row) =>
+                          row.workOrder?.amsWorkOrderNumber || "Not available",
+                      },
+                      {
+                        key: "invoice",
+                        label: "Invoice Status",
+                        render: (row) => row.invoice?.status || "No invoice",
+                      },
+                    ]}
+                    rows={selectedCrewSiteServiceLog}
+                    stickyHeader
+                    emptyTitle="No services recorded yet"
+                    emptyText="No services recorded yet"
+                  />
+                </div>
+              </PageSection>
+            </div>
+          ) : (
+            <EmptyState
+              title="No site selected"
+              text="Select a site to view details."
+            />
+          )
+        }
+      />
+    </PageSection>
+  );
 
   const crewProposalStatusSection = (
     <PageSection title="My Proposals">
-      {currentCrewRecord ? <div className="proposal-history-grid">{sortByNewest(appState.proposals.filter((proposal) => proposal.vendorId === currentCrewRecord.id), "submittedAt").map((proposal) => {
-        const workOrder = appState.workOrders.find((entry) => entry.id === proposal.workOrderId);
-        const site = workOrder ? appState.sites.find((entry) => entry.id === workOrder.siteId) : null;
-        const canResubmit = currentCrewRecord && workOrder && canCrewSubmitProposal({ workOrder, site, vendor: currentCrewRecord, proposals: appState.proposals, jobs: appState.jobs }) && ["rejected", "revision_requested"].includes(proposal.status);
-        return <article key={proposal.id} className="proposal-history-card"><div className="proposal-history-top"><div><strong>{workOrder?.siteName || "Work Order"}</strong><p>{workOrder?.description || "Reference unavailable"}</p></div><ProposalStatusBadge value={proposal.status} /></div><div className="proposal-history-grid-inner"><div><span className="detail-label">Submitted Cost</span><p>{formatMoney(proposal.submittedPrice)}</p></div><div><span className="detail-label">Reviewed Cost</span><p>{formatMoney(proposal.reviewedPrice)}</p></div><div><span className="detail-label">Submitted At</span><p>{formatDate(proposal.submittedAt)}</p></div><div><span className="detail-label">Revision Count</span><p>{proposal.revisionCount}</p></div></div><div className="proposal-history-notes"><div><span className="detail-label">AMS Notes</span><p>{proposal.amsNotes || "No AMS notes yet."}</p></div></div>{canResubmit ? <div className="proposal-history-actions"><button className="secondary-button" onClick={() => prepareResubmissionDraft(proposal)}>Load Resubmission Draft</button></div> : null}</article>;
-      })}</div> : <EmptyState title="No proposals yet" text="Your submitted proposal history will appear here." />}
+      {currentCrewRecord ? (
+        <div className="proposal-history-grid">
+          {sortByNewest(
+            appState.proposals.filter(
+              (proposal) => proposal.vendorId === currentCrewRecord.id,
+            ),
+            "submittedAt",
+          ).map((proposal) => {
+            const workOrder = appState.workOrders.find(
+              (entry) => entry.id === proposal.workOrderId,
+            );
+            const site = workOrder
+              ? appState.sites.find((entry) => entry.id === workOrder.siteId)
+              : null;
+            const canResubmit =
+              currentCrewRecord &&
+              workOrder &&
+              canCrewSubmitProposal({
+                workOrder,
+                site,
+                vendor: currentCrewRecord,
+                proposals: appState.proposals,
+                jobs: appState.jobs,
+              }) &&
+              ["rejected", "revision_requested"].includes(proposal.status);
+            return (
+              <article key={proposal.id} className="proposal-history-card">
+                <div className="proposal-history-top">
+                  <div>
+                    <strong>{workOrder?.siteName || "Work Order"}</strong>
+                    <p>{workOrder?.description || "Reference unavailable"}</p>
+                  </div>
+                  <ProposalStatusBadge value={proposal.status} />
+                </div>
+                <div className="proposal-history-grid-inner">
+                  <div>
+                    <span className="detail-label">Submitted Cost</span>
+                    <p>{formatMoney(proposal.submittedPrice)}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Reviewed Cost</span>
+                    <p>{formatMoney(proposal.reviewedPrice)}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Submitted At</span>
+                    <p>{formatDate(proposal.submittedAt)}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Revision Count</span>
+                    <p>{proposal.revisionCount}</p>
+                  </div>
+                </div>
+                <div className="proposal-history-notes">
+                  <div>
+                    <span className="detail-label">AMS Notes</span>
+                    <p>{proposal.amsNotes || "No AMS notes yet."}</p>
+                  </div>
+                </div>
+                {canResubmit ? (
+                  <div className="proposal-history-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() => prepareResubmissionDraft(proposal)}
+                    >
+                      Load Resubmission Draft
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          title="No proposals yet"
+          text="Your submitted proposal history will appear here."
+        />
+      )}
     </PageSection>
   );
 
@@ -4699,10 +6278,28 @@ function AppBuild03() {
             <div className="list-scroll compact-scroll contained-scroll">
               <DataTable
                 columns={[
-                  { key: "site", label: "Site", render: (row) => row.job.siteName },
-                  { key: "reference", label: "Job / WO Ref", render: (row) => `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
-                  { key: "amount", label: "Submitted Amount", render: (row) => formatMoney(row.job.price) },
-                  { key: "completedAt", label: "Completion Date", render: (row) => formatDate(row.job.completedTime || row.job.completedAt) },
+                  {
+                    key: "site",
+                    label: "Site",
+                    render: (row) => row.job.siteName,
+                  },
+                  {
+                    key: "reference",
+                    label: "Job / WO Ref",
+                    render: (row) =>
+                      `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                  },
+                  {
+                    key: "amount",
+                    label: "Submitted Amount",
+                    render: (row) => formatMoney(row.job.price),
+                  },
+                  {
+                    key: "completedAt",
+                    label: "Completion Date",
+                    render: (row) =>
+                      formatDate(row.job.completedTime || row.job.completedAt),
+                  },
                   {
                     key: "action",
                     label: "Action",
@@ -4719,7 +6316,12 @@ function AppBuild03() {
                     ),
                   },
                 ]}
-                rows={crewInvoices.filter(({ job, invoice }) => job.status === "Completed" && !invoice).map(({ job, invoice }) => ({ id: job.id, job, invoice }))}
+                rows={crewInvoices
+                  .filter(
+                    ({ job, invoice }) =>
+                      job.status === "Completed" && !invoice,
+                  )
+                  .map(({ job, invoice }) => ({ id: job.id, job, invoice }))}
                 emptyTitle="No invoices ready"
                 emptyText="Completed jobs without invoices will appear here."
               />
@@ -4729,12 +6331,40 @@ function AppBuild03() {
             <div className="list-scroll compact-scroll contained-scroll">
               <DataTable
                 columns={[
-                  { key: "invoice", label: "Invoice Ref", render: (row) => row.invoice.invoiceNumber || row.invoice.id },
-                  { key: "reference", label: "Job / WO Ref", render: (row) => `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}` },
-                  { key: "site", label: "Site", render: (row) => row.job.siteName },
-                  { key: "amount", label: "Submitted Amount", render: (row) => formatMoney(row.invoice.amount) },
-                  { key: "submittedAt", label: "Submission Date", render: (row) => formatDate(row.invoice.submittedAt) },
-                  { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.invoice.status} /> },
+                  {
+                    key: "invoice",
+                    label: "Invoice Ref",
+                    render: (row) =>
+                      row.invoice.invoiceNumber || row.invoice.id,
+                  },
+                  {
+                    key: "reference",
+                    label: "Job / WO Ref",
+                    render: (row) =>
+                      `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                  },
+                  {
+                    key: "site",
+                    label: "Site",
+                    render: (row) => row.job.siteName,
+                  },
+                  {
+                    key: "amount",
+                    label: "Submitted Amount",
+                    render: (row) => formatMoney(row.invoice.amount),
+                  },
+                  {
+                    key: "submittedAt",
+                    label: "Submission Date",
+                    render: (row) => formatDate(row.invoice.submittedAt),
+                  },
+                  {
+                    key: "status",
+                    label: "Status",
+                    render: (row) => (
+                      <InvoiceStatusBadge value={row.invoice.status} />
+                    ),
+                  },
                 ]}
                 rows={crewSubmittedInvoices}
                 selectedRowId={selectedInvoice?.id}
@@ -4749,29 +6379,87 @@ function AppBuild03() {
               <div className="detail-card">
                 <div className="proposal-summary-top">
                   <div>
-                    <strong>{selectedCrewInvoiceRecord.invoice.invoiceNumber || selectedCrewInvoiceRecord.invoice.id}</strong>
+                    <strong>
+                      {selectedCrewInvoiceRecord.invoice.invoiceNumber ||
+                        selectedCrewInvoiceRecord.invoice.id}
+                    </strong>
                     <p>{selectedCrewInvoiceRecord.job.siteName}</p>
                   </div>
-                  <InvoiceStatusBadge value={selectedCrewInvoiceRecord.invoice.status} />
+                  <InvoiceStatusBadge
+                    value={selectedCrewInvoiceRecord.invoice.status}
+                  />
                 </div>
                 <div className="proposal-summary-grid">
-                  <div><span className="detail-label">Job</span><p>{selectedCrewInvoiceRecord.job.id}</p></div>
-                  <div><span className="detail-label">Work Order</span><p>{appState.workOrders.find((workOrder) => workOrder.id === selectedCrewInvoiceRecord.job.workOrderId)?.amsWorkOrderNumber || "Not available"}</p></div>
-                  <div><span className="detail-label">Submitted Amount</span><p>{formatMoney(selectedCrewInvoiceRecord.invoice.amount)}</p></div>
-                  <div><span className="detail-label">Submitted Date</span><p>{formatDate(selectedCrewInvoiceRecord.invoice.submittedAt)}</p></div>
-                  <div><span className="detail-label">Terms</span><p>{selectedCrewInvoiceRecord.invoice.terms || "Net 30"}</p></div>
-                  <div><span className="detail-label">Service</span><p>{selectedCrewInvoiceRecord.job.servicePerformed || selectedCrewInvoiceRecord.job.serviceType}</p></div>
-                  <div><span className="detail-label">Job Completed</span><p>{formatDate(selectedCrewInvoiceRecord.job.completedTime || selectedCrewInvoiceRecord.job.completedAt)}</p></div>
-                  <div><span className="detail-label">AMS Notes</span><p>{selectedCrewInvoiceRecord.invoice.notes || "No notes yet."}</p></div>
+                  <div>
+                    <span className="detail-label">Job</span>
+                    <p>{selectedCrewInvoiceRecord.job.id}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Work Order</span>
+                    <p>
+                      {appState.workOrders.find(
+                        (workOrder) =>
+                          workOrder.id ===
+                          selectedCrewInvoiceRecord.job.workOrderId,
+                      )?.amsWorkOrderNumber || "Not available"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Submitted Amount</span>
+                    <p>
+                      {formatMoney(selectedCrewInvoiceRecord.invoice.amount)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Submitted Date</span>
+                    <p>
+                      {formatDate(
+                        selectedCrewInvoiceRecord.invoice.submittedAt,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Terms</span>
+                    <p>{selectedCrewInvoiceRecord.invoice.terms || "Net 30"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Service</span>
+                    <p>
+                      {selectedCrewInvoiceRecord.job.servicePerformed ||
+                        selectedCrewInvoiceRecord.job.serviceType}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Job Completed</span>
+                    <p>
+                      {formatDate(
+                        selectedCrewInvoiceRecord.job.completedTime ||
+                          selectedCrewInvoiceRecord.job.completedAt,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">AMS Notes</span>
+                    <p>
+                      {selectedCrewInvoiceRecord.invoice.notes ||
+                        "No notes yet."}
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
-              <EmptyState title="No invoice selected" text="Select a submitted invoice to view details." />
+              <EmptyState
+                title="No invoice selected"
+                text="Select a submitted invoice to view details."
+              />
             )}
           </PageSection>
         </div>
       ) : (
-        <EmptyState title="No invoices yet" text="Completed job invoice tracking will appear here." />
+        <EmptyState
+          title="No invoices yet"
+          text="Completed job invoice tracking will appear here."
+        />
       )}
     </PageSection>
   );
@@ -4783,10 +6471,28 @@ function AppBuild03() {
           <DataTable
             columns={[
               { key: "site", label: "Site", render: (row) => row.siteName },
-              { key: "service", label: "Service", render: (row) => row.servicePerformed || row.serviceType },
-              { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) },
-              { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedTime) },
-              { key: "invoice", label: "Invoice", render: (row) => getInvoiceForJob(appState.invoices, row.id)?.status || "Not Invoiced" },
+              {
+                key: "service",
+                label: "Service",
+                render: (row) => row.servicePerformed || row.serviceType,
+              },
+              {
+                key: "start",
+                label: "Start Time",
+                render: (row) => formatDate(row.startTime),
+              },
+              {
+                key: "end",
+                label: "Completion Time",
+                render: (row) => formatDate(row.completedTime),
+              },
+              {
+                key: "invoice",
+                label: "Invoice",
+                render: (row) =>
+                  getInvoiceForJob(appState.invoices, row.id)?.status ||
+                  "Not Invoiced",
+              },
             ]}
             rows={completedCrewJobs}
             emptyTitle="No completed jobs"
@@ -4800,7 +6506,23 @@ function AppBuild03() {
   const crewDashboard = (
     <div className="screen-grid vendor-screen">
       <PageSection title="My Jobs">
-        {activeCrewJobs.length ? <div className="job-card-grid">{activeCrewJobs.map((job) => <JobCard key={job.id} job={job} onStart={(jobId) => openJobConfirmation("start", jobId)} onComplete={(jobId) => openJobConfirmation("complete", jobId)} />)}</div> : <EmptyState title="No active jobs" text="Assigned active jobs will appear here." />}
+        {activeCrewJobs.length ? (
+          <div className="job-card-grid">
+            {activeCrewJobs.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                onStart={(jobId) => openJobConfirmation("start", jobId)}
+                onComplete={(jobId) => openJobConfirmation("complete", jobId)}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No active jobs"
+            text="Assigned active jobs will appear here."
+          />
+        )}
       </PageSection>
       {crewAvailableWorkSection}
       {completedJobsScreen}
@@ -4825,10 +6547,29 @@ function AppBuild03() {
       <PageSection title="Vendor Footprint">
         <DataTable
           columns={[
-            { key: "vendor", label: "Vendor", render: (row) => row.companyName },
-            { key: "contact", label: "Contact", render: (row) => row.contactName },
-            { key: "phone", label: "Phone", render: (row) => <a href={`tel:${row.phone}`}>{row.phone}</a> },
-            { key: "sites", label: "Assigned Sites", render: (row) => appState.sites.filter((site) => site.assignedVendorId === row.id).length },
+            {
+              key: "vendor",
+              label: "Vendor",
+              render: (row) => row.companyName,
+            },
+            {
+              key: "contact",
+              label: "Contact",
+              render: (row) => row.contactName,
+            },
+            {
+              key: "phone",
+              label: "Phone",
+              render: (row) => <a href={`tel:${row.phone}`}>{row.phone}</a>,
+            },
+            {
+              key: "sites",
+              label: "Assigned Sites",
+              render: (row) =>
+                appState.sites.filter(
+                  (site) => site.assignedVendorId === row.id,
+                ).length,
+            },
           ]}
           rows={normalizedVendors}
           emptyTitle="No vendors"
@@ -4841,12 +6582,30 @@ function AppBuild03() {
   const platformStatusScreen = (
     <div className="screen-grid">
       <PageSection title="Platform Status">
-        <StatGrid items={[
-          { label: "Firebase Auth Mapping", value: Object.keys(FIREBASE_ROLE_BRIDGE || {}).length },
-          { label: "Active Users", value: appState.users.filter((user) => user.active).length },
-          { label: "Pending Vendor Auth", value: normalizedVendors.filter((vendor) => vendor.authStatus === "Pending").length },
-          { label: "Invoices Rejected", value: appState.invoices.filter((invoice) => invoice.status === "Rejected").length },
-        ]} />
+        <StatGrid
+          items={[
+            {
+              label: "Firebase Auth Mapping",
+              value: Object.keys(FIREBASE_ROLE_BRIDGE || {}).length,
+            },
+            {
+              label: "Active Users",
+              value: appState.users.filter((user) => user.active).length,
+            },
+            {
+              label: "Pending Vendor Auth",
+              value: normalizedVendors.filter(
+                (vendor) => vendor.authStatus === "Pending",
+              ).length,
+            },
+            {
+              label: "Invoices Rejected",
+              value: appState.invoices.filter(
+                (invoice) => invoice.status === "Rejected",
+              ).length,
+            },
+          ]}
+        />
       </PageSection>
     </div>
   );
@@ -4855,9 +6614,27 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="Internal Notes">
         <div className="detail-stack">
-          <div className="detail-card"><span className="detail-label">Owner Note</span><p>Owner portal remains hidden and only opens for the mapped platform account.</p></div>
-          <div className="detail-card"><span className="detail-label">Operational Note</span><p>Cold starts return to splash and login, while in-session navigation is preserved until the app is fully closed.</p></div>
-          <div className="detail-card"><span className="detail-label">Data Note</span><p>Operational Sites, Work Orders, Jobs, and Vendors load from Firestore. Empty Firestore collections show clean empty states.</p></div>
+          <div className="detail-card">
+            <span className="detail-label">Owner Note</span>
+            <p>
+              Owner portal remains hidden and only opens for the mapped platform
+              account.
+            </p>
+          </div>
+          <div className="detail-card">
+            <span className="detail-label">Operational Note</span>
+            <p>
+              Cold starts return to splash and login, while in-session
+              navigation is preserved until the app is fully closed.
+            </p>
+          </div>
+          <div className="detail-card">
+            <span className="detail-label">Data Note</span>
+            <p>
+              Operational Sites, Work Orders, Jobs, and Vendors load from
+              Firestore. Empty Firestore collections show clean empty states.
+            </p>
+          </div>
         </div>
       </PageSection>
     </div>
@@ -4867,9 +6644,36 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="System Controls">
         <div className="form-actions">
-          <button className="secondary-button" onClick={() => window.alert("Firebase Auth and Firestore role routing are active.")}>Auth Status</button>
-          <button className="secondary-button" onClick={() => window.alert("Operational Work Orders, Jobs, and Vendors are loaded from Firestore. Session state only preserves navigation while the app is open.")}>Session Policy</button>
-          <button className="secondary-button" onClick={() => window.alert("Audit log is reserved as a placeholder for the next controlled release.")}>Audit Queue</button>
+          <button
+            className="secondary-button"
+            onClick={() =>
+              window.alert(
+                "Firebase Auth and Firestore role routing are active.",
+              )
+            }
+          >
+            Auth Status
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() =>
+              window.alert(
+                "Operational Work Orders, Jobs, and Vendors are loaded from Firestore. Session state only preserves navigation while the app is open.",
+              )
+            }
+          >
+            Session Policy
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() =>
+              window.alert(
+                "Audit log is reserved as a placeholder for the next controlled release.",
+              )
+            }
+          >
+            Audit Queue
+          </button>
         </div>
       </PageSection>
     </div>
@@ -4878,12 +6682,28 @@ function AppBuild03() {
   const reportsScreen = (
     <div className="screen-grid">
       <PageSection title="Reports">
-        <StatGrid items={[
-          { label: "Completed Jobs", value: appState.jobs.filter((job) => job.status === "Completed").length },
-          { label: "Ready for Invoice", value: readyForInvoiceJobs.length },
-          { label: "Needs Attention", value: appState.workOrders.filter((workOrder) => workOrder.status === "Needs Attention").length },
-          { label: "Open Opportunities", value: appState.workOrders.filter((workOrder) => workOrder.status === "Open").length },
-        ]} />
+        <StatGrid
+          items={[
+            {
+              label: "Completed Jobs",
+              value: appState.jobs.filter((job) => job.status === "Completed")
+                .length,
+            },
+            { label: "Ready for Invoice", value: readyForInvoiceJobs.length },
+            {
+              label: "Needs Attention",
+              value: appState.workOrders.filter(
+                (workOrder) => workOrder.status === "Needs Attention",
+              ).length,
+            },
+            {
+              label: "Open Opportunities",
+              value: appState.workOrders.filter(
+                (workOrder) => workOrder.status === "Open",
+              ).length,
+            },
+          ]}
+        />
       </PageSection>
     </div>
   );
@@ -4892,47 +6712,522 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="User Management">
         <InputRow>
-          <Field label="Full Name"><input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></Field>
-          <Field label="Email"><input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} /></Field>
-          <Field label="Password"><input type="password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} /></Field>
-          <Field label="Phone Number"><input value={userForm.phone} onChange={(event) => setUserForm((current) => ({ ...current, phone: event.target.value }))} /></Field>
-          <Field label="Job Title"><input value={userForm.jobTitle} onChange={(event) => setUserForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field>
-          <Field label="Company Name"><input value={userForm.companyName} onChange={(event) => setUserForm((current) => ({ ...current, companyName: event.target.value }))} /></Field>
-          <Field label="Street Address"><input value={userForm.streetAddress} onChange={(event) => setUserForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field>
-          <Field label="City"><input value={userForm.city} onChange={(event) => setUserForm((current) => ({ ...current, city: event.target.value }))} /></Field>
-          <Field label="State"><input value={userForm.state} onChange={(event) => setUserForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field>
-          <Field label="ZIP"><input value={userForm.zip} onChange={(event) => setUserForm((current) => ({ ...current, zip: event.target.value }))} /></Field>
-          <Field label="Access Status"><select value={userForm.accessStatus} onChange={(event) => setUserForm((current) => ({ ...current, accessStatus: event.target.value }))}><option value="Active">Active</option><option value="Inactive">Inactive</option></select></Field>
-          <Field label="Auth Status"><select value={userForm.authStatus} onChange={(event) => setUserForm((current) => ({ ...current, authStatus: event.target.value }))}><option value="Active">Active</option><option value="Pending">Pending</option><option value="Disabled">Disabled</option></select></Field>
-          <Field label="Internal Notes"><textarea rows="4" value={userForm.internalNotes} onChange={(event) => setUserForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field>
-          <Field label="Role"><select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value }))}>{Object.values(ROLES).map((role) => <option key={role} value={role}>{role}</option>)}</select></Field>
+          <Field label="Full Name">
+            <input
+              value={userForm.name}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Email">
+            <input
+              value={userForm.email}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              value={userForm.password}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Phone Number">
+            <input
+              value={userForm.phone}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  phone: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Job Title">
+            <input
+              value={userForm.jobTitle}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  jobTitle: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Company Name">
+            <input
+              value={userForm.companyName}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  companyName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Street Address">
+            <input
+              value={userForm.streetAddress}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  streetAddress: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="City">
+            <input
+              value={userForm.city}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  city: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="State">
+            <input
+              value={userForm.state}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  state: event.target.value.toUpperCase(),
+                }))
+              }
+            />
+          </Field>
+          <Field label="ZIP">
+            <input
+              value={userForm.zip}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  zip: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Access Status">
+            <select
+              value={userForm.accessStatus}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  accessStatus: event.target.value,
+                }))
+              }
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </Field>
+          <Field label="Auth Status">
+            <select
+              value={userForm.authStatus}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  authStatus: event.target.value,
+                }))
+              }
+            >
+              <option value="Active">Active</option>
+              <option value="Pending">Pending</option>
+              <option value="Disabled">Disabled</option>
+            </select>
+          </Field>
+          <Field label="Internal Notes">
+            <textarea
+              rows="4"
+              value={userForm.internalNotes}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  internalNotes: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={userForm.role}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  role: event.target.value,
+                }))
+              }
+            >
+              {Object.values(ROLES).map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </Field>
         </InputRow>
-        <div className="form-actions"><button className="primary-button" onClick={saveUser}>{editingUserId ? "Update User" : "Add User"}</button></div>
+        <div className="form-actions">
+          <button className="primary-button" onClick={saveUser}>
+            {editingUserId ? "Update User" : "Add User"}
+          </button>
+        </div>
       </PageSection>
-      <PageSection title="Current Users"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "email", label: "Email", render: (row) => row.email }, { key: "phone", label: "Phone", render: (row) => row.phone || "Not set" }, { key: "role", label: "Role", render: (row) => row.role }, { key: "access", label: "Access Status", render: (row) => row.accessStatus || (row.active ? "Active" : "Inactive") }, { key: "auth", label: "Auth Status", render: (row) => row.authStatus || "Active" }, { key: "actions", label: "Actions", render: (row) => <div className="table-actions"><button className="secondary-button" onClick={(event) => { event.stopPropagation(); startEditUser(row); }}>Edit</button><button className="secondary-button" onClick={(event) => { event.stopPropagation(); toggleUserActive(row.id); }}>{row.active ? "Deactivate" : "Activate"}</button><button className="secondary-button" onClick={(event) => { event.stopPropagation(); archiveUser(row.id); }}>Archive</button><button className="secondary-button danger-button" onClick={(event) => { event.stopPropagation(); deleteUser(row.id); }}>Delete</button></div> }]} rows={ownerVisibleUsers} emptyTitle="No users" emptyText="Users added here will persist locally." /></PageSection>
+      <PageSection title="Current Users">
+        <DataTable
+          columns={[
+            { key: "name", label: "Name", render: (row) => row.name },
+            { key: "email", label: "Email", render: (row) => row.email },
+            {
+              key: "phone",
+              label: "Phone",
+              render: (row) => row.phone || "Not set",
+            },
+            { key: "role", label: "Role", render: (row) => row.role },
+            {
+              key: "access",
+              label: "Access Status",
+              render: (row) =>
+                row.accessStatus || (row.active ? "Active" : "Inactive"),
+            },
+            {
+              key: "auth",
+              label: "Auth Status",
+              render: (row) => row.authStatus || "Active",
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              render: (row) => (
+                <div className="table-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startEditUser(row);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleUserActive(row.id);
+                    }}
+                  >
+                    {row.active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      archiveUser(row.id);
+                    }}
+                  >
+                    Archive
+                  </button>
+                  <button
+                    className="secondary-button danger-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteUser(row.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          rows={ownerVisibleUsers}
+          emptyTitle="No users"
+          emptyText="Users added here will persist locally."
+        />
+      </PageSection>
     </div>
   );
 
   const siteImportValidCount = siteImportRows.filter((row) => row.valid).length;
-  const siteImportInvalidCount = siteImportRows.filter((row) => !row.valid).length;
-  const canConfirmSiteImport = Boolean(siteImportRows.length) && siteImportInvalidCount === 0 && !siteImportLoading;
+  const siteImportInvalidCount = siteImportRows.filter(
+    (row) => !row.valid,
+  ).length;
+  const canConfirmSiteImport =
+    Boolean(siteImportRows.length) &&
+    siteImportInvalidCount === 0 &&
+    !siteImportLoading;
 
   const sitesScreen = (
     <div className="screen-grid">
-      {sitesLoading ? <div className="inline-notice info">Loading Firestore sites...</div> : null}
-      {sitesError ? <div className="inline-notice error">Firestore sites unavailable: {sitesError}.</div> : null}
+      {sitesLoading ? (
+        <div className="inline-notice info">Loading Firestore sites...</div>
+      ) : null}
+      {sitesError ? (
+        <div className="inline-notice error">
+          Firestore sites unavailable: {sitesError}.
+        </div>
+      ) : null}
       <PageSection
         title="Sites"
         action={
           <div className="form-actions">
-            {isAmsViewer ? <button className="secondary-button" onClick={openSiteImport}>Upload Sites</button> : null}
-            <button className="primary-button" onClick={() => openModal("site")}>Create Site</button>
+            {isAmsViewer ? (
+              <button className="secondary-button" onClick={openSiteImport}>
+                Upload Sites
+              </button>
+            ) : null}
+            <button
+              className="primary-button"
+              onClick={() => openModal("site")}
+            >
+              Create Site
+            </button>
           </div>
         }
       >
         <SplitView
-          list={<div className="list-stack"><SearchBar value={siteSearch} onChange={setSiteSearch} placeholder="Search sites" /><div className="list-scroll"><DataTable columns={[{ key: "name", label: "Name", render: (row) => row.name }, { key: "siteNumber", label: "Site #", render: (row) => row.siteNumber || "Not set" }, { key: "address", label: "Address", render: (row) => row.address }, { key: "assigned", label: "Primary Assigned Vendor", render: (row) => row.assignedVendorName || "Unassigned" }, { key: "state", label: "State", render: (row) => row.state }]} rows={filteredSites} selectedRowId={appState.ui.selectedSiteId} onRowClick={(row) => setSelectedSite(row.id)} emptyTitle="No sites" emptyText="Add a site to start routing work orders." /></div></div>}
-          detail={selectedSite ? <div className="detail-stack"><SiteDetailsCard site={selectedSite} relatedWorkOrderCount={appState.workOrders.filter((workOrder) => workOrder.siteId === selectedSite.id).length} needsActionCount={selectedSiteNeedsActionCount} /><div className="detail-card"><div className="proposal-summary-grid"><div><span className="detail-label">Street Address</span><p>{selectedSite.streetAddress || "Not set"}</p></div><div><span className="detail-label">City</span><p>{selectedSite.city || "Not set"}</p></div><div><span className="detail-label">State</span><p>{selectedSite.state || "Not set"}</p></div><div><span className="detail-label">ZIP Code</span><p>{selectedSite.zip || "Not set"}</p></div><div><span className="detail-label">Manager</span><p>{selectedSite.manager || "Not set"}</p></div><div><span className="detail-label">Contact</span><p>{selectedSite.contact || "Not set"}</p></div><div><span className="detail-label">Primary Assigned Vendor</span><p>{selectedSite.assignedVendorName || "Unassigned"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedSite.assignedCrewContactName || normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.contactName || "Not set"}</p></div><div><span className="detail-label">Vendor Phone</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone ? <a href={`tel:${normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone}`}>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Vendor Email</span><p>{normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.email || "Not set"}</p></div></div></div><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>{selectedSite.siteMapStatus}</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>{selectedSite.geoFenceStatus}</p></article></div><PageSection title="Site Service Log"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "date", label: "Date of Service", render: (row) => formatDate(row.completedAt || row.canceledAt) }, { key: "service", label: "Service Performed", render: (row) => row.serviceType }, { key: "workType", label: "Work Type", render: (row) => getWorkTypeLabel(row.workType) }, { key: "vendor", label: "Vendor", render: (row) => row.vendorName }, { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }, { key: "start", label: "Start Time", render: (row) => formatDate(row.startTime) }, { key: "end", label: "Completion Time", render: (row) => formatDate(row.completedAt) }, { key: "scope", label: "Scope", render: (row) => row.scope || row.description || "No scope notes" }, { key: "wo", label: "AMS Work Order", render: (row) => row.workOrder?.amsWorkOrderNumber || "Not available" }, { key: "invoice", label: "Invoice Status", render: (row) => row.invoice?.status || "Not Invoiced" }]} rows={selectedSiteServiceLog} emptyTitle="No site service history" emptyText="Completed and canceled services for this site will appear here." /></div></PageSection><div className="form-actions"><button className="secondary-button" onClick={() => startEditSite(selectedSite)}>Edit Site</button><button className="secondary-button danger-button" onClick={() => removeSite(selectedSite.id)}>Remove Site</button></div></div> : <EmptyState title="No site selected" text="Select a site to view details." />}
+          list={
+            <div className="list-stack">
+              <SearchBar
+                value={siteSearch}
+                onChange={setSiteSearch}
+                placeholder="Search sites"
+              />
+              <div className="list-scroll">
+                <DataTable
+                  columns={[
+                    { key: "name", label: "Name", render: (row) => row.name },
+                    {
+                      key: "siteNumber",
+                      label: "Site #",
+                      render: (row) => row.siteNumber || "Not set",
+                    },
+                    {
+                      key: "address",
+                      label: "Address",
+                      render: (row) => row.address,
+                    },
+                    {
+                      key: "assigned",
+                      label: "Primary Assigned Vendor",
+                      render: (row) => row.assignedVendorName || "Unassigned",
+                    },
+                    {
+                      key: "state",
+                      label: "State",
+                      render: (row) => row.state,
+                    },
+                  ]}
+                  rows={filteredSites}
+                  selectedRowId={appState.ui.selectedSiteId}
+                  onRowClick={(row) => setSelectedSite(row.id)}
+                  emptyTitle="No sites"
+                  emptyText="Add a site to start routing work orders."
+                />
+              </div>
+            </div>
+          }
+          detail={
+            selectedSite ? (
+              <div className="detail-stack">
+                <SiteDetailsCard
+                  site={selectedSite}
+                  relatedWorkOrderCount={
+                    appState.workOrders.filter(
+                      (workOrder) => workOrder.siteId === selectedSite.id,
+                    ).length
+                  }
+                  needsActionCount={selectedSiteNeedsActionCount}
+                />
+                <div className="detail-card">
+                  <div className="proposal-summary-grid">
+                    <div>
+                      <span className="detail-label">Street Address</span>
+                      <p>{selectedSite.streetAddress || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">City</span>
+                      <p>{selectedSite.city || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">State</span>
+                      <p>{selectedSite.state || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">ZIP Code</span>
+                      <p>{selectedSite.zip || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Manager</span>
+                      <p>{selectedSite.manager || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Contact</span>
+                      <p>{selectedSite.contact || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">
+                        Primary Assigned Vendor
+                      </span>
+                      <p>{selectedSite.assignedVendorName || "Unassigned"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Vendor Contact</span>
+                      <p>
+                        {selectedSite.assignedCrewContactName ||
+                          normalizedVendors.find(
+                            (vendor) =>
+                              vendor.id === selectedSite.assignedVendorId,
+                          )?.contactName ||
+                          "Not set"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Vendor Phone</span>
+                      <p>
+                        {normalizedVendors.find(
+                          (vendor) =>
+                            vendor.id === selectedSite.assignedVendorId,
+                        )?.phone ? (
+                          <a
+                            href={`tel:${normalizedVendors.find((vendor) => vendor.id === selectedSite.assignedVendorId)?.phone}`}
+                          >
+                            {
+                              normalizedVendors.find(
+                                (vendor) =>
+                                  vendor.id === selectedSite.assignedVendorId,
+                              )?.phone
+                            }
+                          </a>
+                        ) : (
+                          "Not set"
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Vendor Email</span>
+                      <p>
+                        {normalizedVendors.find(
+                          (vendor) =>
+                            vendor.id === selectedSite.assignedVendorId,
+                        )?.email || "Not set"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="proposal-summary-grid">
+                  <article className="detail-card">
+                    <span className="detail-label">Site Map</span>
+                    <p>{selectedSite.siteMapStatus}</p>
+                  </article>
+                  <article className="detail-card">
+                    <span className="detail-label">Geo Fence</span>
+                    <p>{selectedSite.geoFenceStatus}</p>
+                  </article>
+                </div>
+                <PageSection title="Site Service Log">
+                  <div className="list-scroll compact-scroll contained-scroll">
+                    <DataTable
+                      columns={[
+                        {
+                          key: "date",
+                          label: "Date of Service",
+                          render: (row) =>
+                            formatDate(row.completedAt || row.canceledAt),
+                        },
+                        {
+                          key: "service",
+                          label: "Service Performed",
+                          render: (row) => row.serviceType,
+                        },
+                        {
+                          key: "workType",
+                          label: "Work Type",
+                          render: (row) => getWorkTypeLabel(row.workType),
+                        },
+                        {
+                          key: "vendor",
+                          label: "Vendor",
+                          render: (row) => row.vendorName,
+                        },
+                        {
+                          key: "status",
+                          label: "Status",
+                          render: (row) => <StatusBadge value={row.status} />,
+                        },
+                        {
+                          key: "start",
+                          label: "Start Time",
+                          render: (row) => formatDate(row.startTime),
+                        },
+                        {
+                          key: "end",
+                          label: "Completion Time",
+                          render: (row) => formatDate(row.completedAt),
+                        },
+                        {
+                          key: "scope",
+                          label: "Scope",
+                          render: (row) =>
+                            row.scope || row.description || "No scope notes",
+                        },
+                        {
+                          key: "wo",
+                          label: "AMS Work Order",
+                          render: (row) =>
+                            row.workOrder?.amsWorkOrderNumber ||
+                            "Not available",
+                        },
+                        {
+                          key: "invoice",
+                          label: "Invoice Status",
+                          render: (row) =>
+                            row.invoice?.status || "Not Invoiced",
+                        },
+                      ]}
+                      rows={selectedSiteServiceLog}
+                      emptyTitle="No site service history"
+                      emptyText="Completed and canceled services for this site will appear here."
+                    />
+                  </div>
+                </PageSection>
+                <div className="form-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={() => startEditSite(selectedSite)}
+                  >
+                    Edit Site
+                  </button>
+                  <button
+                    className="secondary-button danger-button"
+                    onClick={() => removeSite(selectedSite.id)}
+                  >
+                    Remove Site
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                title="No site selected"
+                text="Select a site to view details."
+              />
+            )
+          }
         />
       </PageSection>
     </div>
@@ -4940,12 +7235,160 @@ function AppBuild03() {
 
   const crewsScreen = (
     <div className="screen-grid">
-      {vendorsLoading ? <div className="inline-notice info">Loading Firestore vendors...</div> : null}
-      {vendorsError ? <div className="inline-notice error">Firestore vendors unavailable: {vendorsError}.</div> : null}
-      <PageSection title="Vendors" action={<button className="primary-button" onClick={() => openModal("vendor")}>Add Vendor</button>}>
+      {vendorsLoading ? (
+        <div className="inline-notice info">Loading Firestore vendors...</div>
+      ) : null}
+      {vendorsError ? (
+        <div className="inline-notice error">
+          Firestore vendors unavailable: {vendorsError}.
+        </div>
+      ) : null}
+      <PageSection
+        title="Vendors"
+        action={
+          <button
+            className="primary-button"
+            onClick={() => openModal("vendor")}
+          >
+            Add Vendor
+          </button>
+        }
+      >
         <SplitView
-          list={<div className="list-stack"><SearchBar value={crewSearch} onChange={setCrewSearch} placeholder="Search vendors" /><div className="list-scroll"><DataTable columns={[{ key: "company", label: "Vendor Company", render: (row) => row.companyName || row.name }, { key: "contact", label: "Vendor Contact", render: (row) => row.contactName || "Not set" }, { key: "serviceType", label: "Primary Service", render: (row) => row.serviceType }, { key: "states", label: "States", render: (row) => row.states.join(", ") }, { key: "status", label: "Status", render: (row) => (row.active ? "Active" : "Inactive") }]} rows={filteredCrews} selectedRowId={selectedCrew?.id} onRowClick={(row) => setSelectedCrewId(row.id)} emptyTitle="No vendors" emptyText="Add a vendor before assigning jobs." /></div></div>}
-          detail={selectedCrew ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedCrew.companyName || selectedCrew.name}</strong><p>{selectedCrew.serviceType}</p></div><StatusBadge value={selectedCrew.active ? "active" : "inactive"} label={selectedCrew.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Vendor Company</span><p>{selectedCrew.companyName || "Not set"}</p></div><div><span className="detail-label">Vendor Contact</span><p>{selectedCrew.contactName || "Not set"}</p></div><div><span className="detail-label">Phone</span><p>{selectedCrew.phone ? <a href={`tel:${selectedCrew.phone}`}>{selectedCrew.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Email</span><p>{selectedCrew.email || "Not set"}</p></div><div><span className="detail-label">Address</span><p>{selectedCrew.address || "Not set"}</p></div><div><span className="detail-label">Service Types</span><p>{selectedCrew.serviceTypes.join(", ")}</p></div><div><span className="detail-label">Coverage</span><p>{selectedCrew.states.join(", ") || "Not set"}</p></div><div><span className="detail-label">Linked Login</span><p>{selectedCrew.email || "Not linked"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedCrew.internalNotes || "No internal notes"}</p></div></div><div className="form-actions"><button className="secondary-button" onClick={() => startEditVendor(selectedCrew)}>Edit Vendor</button><button className="secondary-button" onClick={() => toggleVendorActive(selectedCrew.id)}>{selectedCrew.active ? "Deactivate" : "Activate"}</button><button className="secondary-button danger-button" onClick={() => removeVendor(selectedCrew.id)}>Remove Vendor</button></div></div> : <EmptyState title="No vendor selected" text="Select a vendor to view details." />}
+          list={
+            <div className="list-stack">
+              <SearchBar
+                value={crewSearch}
+                onChange={setCrewSearch}
+                placeholder="Search vendors"
+              />
+              <div className="list-scroll">
+                <DataTable
+                  columns={[
+                    {
+                      key: "company",
+                      label: "Vendor Company",
+                      render: (row) => row.companyName || row.name,
+                    },
+                    {
+                      key: "contact",
+                      label: "Vendor Contact",
+                      render: (row) => row.contactName || "Not set",
+                    },
+                    {
+                      key: "serviceType",
+                      label: "Primary Service",
+                      render: (row) => row.serviceType,
+                    },
+                    {
+                      key: "states",
+                      label: "States",
+                      render: (row) => row.states.join(", "),
+                    },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (row) => (row.active ? "Active" : "Inactive"),
+                    },
+                  ]}
+                  rows={filteredCrews}
+                  selectedRowId={selectedCrew?.id}
+                  onRowClick={(row) => setSelectedCrewId(row.id)}
+                  emptyTitle="No vendors"
+                  emptyText="Add a vendor before assigning jobs."
+                />
+              </div>
+            </div>
+          }
+          detail={
+            selectedCrew ? (
+              <div className="detail-card">
+                <div className="proposal-summary-top">
+                  <div>
+                    <strong>
+                      {selectedCrew.companyName || selectedCrew.name}
+                    </strong>
+                    <p>{selectedCrew.serviceType}</p>
+                  </div>
+                  <StatusBadge
+                    value={selectedCrew.active ? "active" : "inactive"}
+                    label={selectedCrew.active ? "Active" : "Inactive"}
+                  />
+                </div>
+                <div className="proposal-summary-grid">
+                  <div>
+                    <span className="detail-label">Vendor Company</span>
+                    <p>{selectedCrew.companyName || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Vendor Contact</span>
+                    <p>{selectedCrew.contactName || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Phone</span>
+                    <p>
+                      {selectedCrew.phone ? (
+                        <a href={`tel:${selectedCrew.phone}`}>
+                          {selectedCrew.phone}
+                        </a>
+                      ) : (
+                        "Not set"
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Email</span>
+                    <p>{selectedCrew.email || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Address</span>
+                    <p>{selectedCrew.address || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Service Types</span>
+                    <p>{selectedCrew.serviceTypes.join(", ")}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Coverage</span>
+                    <p>{selectedCrew.states.join(", ") || "Not set"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Linked Login</span>
+                    <p>{selectedCrew.email || "Not linked"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Internal Notes</span>
+                    <p>{selectedCrew.internalNotes || "No internal notes"}</p>
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={() => startEditVendor(selectedCrew)}
+                  >
+                    Edit Vendor
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => toggleVendorActive(selectedCrew.id)}
+                  >
+                    {selectedCrew.active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    className="secondary-button danger-button"
+                    onClick={() => removeVendor(selectedCrew.id)}
+                  >
+                    Remove Vendor
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                title="No vendor selected"
+                text="Select a vendor to view details."
+              />
+            )
+          }
         />
       </PageSection>
     </div>
@@ -4953,13 +7396,214 @@ function AppBuild03() {
 
   const jobsScreen = (
     <div className="screen-grid">
-      {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
-      {jobsLoading ? <div className="inline-notice info">Loading Firestore jobs...</div> : null}
-      {jobsError ? <div className="inline-notice error">Firestore jobs unavailable: {jobsError}.</div> : null}
-      <PageSection title="Jobs" action={<button className="primary-button" onClick={() => openModal("job")}>Create Job</button>}>
+      {sellSaveNotice ? (
+        <div className={`inline-notice ${sellSaveNotice.type}`}>
+          {sellSaveNotice.message}
+        </div>
+      ) : null}
+      {jobsLoading ? (
+        <div className="inline-notice info">Loading Firestore jobs...</div>
+      ) : null}
+      {jobsError ? (
+        <div className="inline-notice error">
+          Firestore jobs unavailable: {jobsError}.
+        </div>
+      ) : null}
+      <PageSection
+        title="Jobs"
+        action={
+          <button className="primary-button" onClick={() => openModal("job")}>
+            Create Job
+          </button>
+        }
+      >
         <SplitView
-          list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={jobSearch} onChange={setJobSearch} placeholder="Search jobs" /><FilterRow label="Filter" value={jobFilter} options={JOB_FILTERS} onChange={setJobFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "siteName", label: "Site", render: (row) => row.siteName }, { key: "vendorName", label: "Crew", render: (row) => row.vendorName || "Unassigned" }, { key: "serviceType", label: "Service Type", render: (row) => row.serviceType }, ...(AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? [{ key: "pricingStatus", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }] : []), { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> }]} rows={filteredJobs} selectedRowId={selectedJob?.id} onRowClick={(row) => setSelectedJobId(row.id)} emptyTitle="No jobs available" emptyText="Assign crews from work orders or approve a proposal to create jobs." /></div></div>}
-          detail={selectedJob ? <div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedJob.siteName}</strong><p>{selectedJob.description}</p></div><StatusBadge value={selectedJob.status} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Crew</span><p>{selectedJob.vendorName || "Unassigned"}</p></div><div><span className="detail-label">Service Type</span><p>{selectedJob.serviceType}</p></div><div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedJob.workType)}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(getJobCostValue(selectedJob))}</p></div>{selectedJob.workType === "recurring" && isAmsViewer ? <div><span className="detail-label">Recurring Vendor Cost</span><p>{formatMoney(selectedJob.recurringVendorCost)}</p></div> : null}{AMS_ROLES.includes(currentUser?.role) || currentUser?.role === ROLES.OWNER ? <><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedJob)} label={getPricingStatus(selectedJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set By</span><p>{appState.users.find((user) => user.id === selectedJob.sellSetBy)?.name || "Not set"}</p></div><div><span className="detail-label">Sell Set At</span><p>{selectedJob.sellSetAt ? formatDate(selectedJob.sellSetAt) : "Not set"}</p></div></> : null}<div><span className="detail-label">Invoice</span><p>{getInvoiceForJob(appState.invoices, selectedJob.id)?.invoiceNumber || "Not created"}</p></div></div><Field label="Job Status"><select value={selectedJob.status} onChange={(event) => updateJobStatus(selectedJob.id, event.target.value)}>{JOB_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>{isAmsViewer ? <SellControl sellValue={getJobSellDraft(selectedJob)} costValue={getJobCostValue(selectedJob)} pricingStatus={getPricingStatus(selectedJob)} editing={editingJobSellId === selectedJob.id || getPricingStatus(selectedJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedJob)} onChange={(value) => updateJobSellDraft(selectedJob.id, value)} onSave={() => saveJobSellForJob(selectedJob)} /> : null}</div> : <EmptyState title="No job selected" text="Select a job to view details." />}
+          list={
+            <div className="list-stack">
+              <div className="list-toolbar">
+                <SearchBar
+                  value={jobSearch}
+                  onChange={setJobSearch}
+                  placeholder="Search jobs"
+                />
+                <FilterRow
+                  label="Filter"
+                  value={jobFilter}
+                  options={JOB_FILTERS}
+                  onChange={setJobFilter}
+                />
+              </div>
+              <div className="list-scroll">
+                <DataTable
+                  columns={[
+                    {
+                      key: "siteName",
+                      label: "Site",
+                      render: (row) => row.siteName,
+                    },
+                    {
+                      key: "vendorName",
+                      label: "Crew",
+                      render: (row) => row.vendorName || "Unassigned",
+                    },
+                    {
+                      key: "serviceType",
+                      label: "Service Type",
+                      render: (row) => row.serviceType,
+                    },
+                    ...(AMS_ROLES.includes(currentUser?.role) ||
+                    currentUser?.role === ROLES.OWNER
+                      ? [
+                          {
+                            key: "pricingStatus",
+                            label: "Pricing",
+                            render: (row) => (
+                              <StatusBadge
+                                value={getPricingStatus(row)}
+                                label={
+                                  getPricingStatus(row) === "set"
+                                    ? "Sell Set"
+                                    : "Sell Not Set"
+                                }
+                              />
+                            ),
+                          },
+                        ]
+                      : []),
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (row) => <StatusBadge value={row.status} />,
+                    },
+                  ]}
+                  rows={filteredJobs}
+                  selectedRowId={selectedJob?.id}
+                  onRowClick={(row) => setSelectedJobId(row.id)}
+                  emptyTitle="No jobs available"
+                  emptyText="Assign crews from work orders or approve a proposal to create jobs."
+                />
+              </div>
+            </div>
+          }
+          detail={
+            selectedJob ? (
+              <div className="detail-card">
+                <div className="proposal-summary-top">
+                  <div>
+                    <strong>{selectedJob.siteName}</strong>
+                    <p>{selectedJob.description}</p>
+                  </div>
+                  <StatusBadge value={selectedJob.status} />
+                </div>
+                <div className="proposal-summary-grid">
+                  <div>
+                    <span className="detail-label">Crew</span>
+                    <p>{selectedJob.vendorName || "Unassigned"}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Service Type</span>
+                    <p>{selectedJob.serviceType}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Work Type</span>
+                    <p>{getWorkTypeLabel(selectedJob.workType)}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Cost</span>
+                    <p>{formatMoney(getJobCostValue(selectedJob))}</p>
+                  </div>
+                  {selectedJob.workType === "recurring" && isAmsViewer ? (
+                    <div>
+                      <span className="detail-label">
+                        Recurring Vendor Cost
+                      </span>
+                      <p>{formatMoney(selectedJob.recurringVendorCost)}</p>
+                    </div>
+                  ) : null}
+                  {AMS_ROLES.includes(currentUser?.role) ||
+                  currentUser?.role === ROLES.OWNER ? (
+                    <>
+                      <div>
+                        <span className="detail-label">Sell</span>
+                        <p>{formatMoney(getJobSellValue(selectedJob))}</p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Pricing Status</span>
+                        <p>
+                          <StatusBadge
+                            value={getPricingStatus(selectedJob)}
+                            label={
+                              getPricingStatus(selectedJob) === "set"
+                                ? "Sell Set"
+                                : "Sell Not Set"
+                            }
+                          />
+                        </p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Sell Set By</span>
+                        <p>
+                          {appState.users.find(
+                            (user) => user.id === selectedJob.sellSetBy,
+                          )?.name || "Not set"}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Sell Set At</span>
+                        <p>
+                          {selectedJob.sellSetAt
+                            ? formatDate(selectedJob.sellSetAt)
+                            : "Not set"}
+                        </p>
+                      </div>
+                    </>
+                  ) : null}
+                  <div>
+                    <span className="detail-label">Invoice</span>
+                    <p>
+                      {getInvoiceForJob(appState.invoices, selectedJob.id)
+                        ?.invoiceNumber || "Not created"}
+                    </p>
+                  </div>
+                </div>
+                <Field label="Job Status">
+                  <select
+                    value={selectedJob.status}
+                    onChange={(event) =>
+                      updateJobStatus(selectedJob.id, event.target.value)
+                    }
+                  >
+                    {JOB_STATUS.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {isAmsViewer ? (
+                  <SellControl
+                    sellValue={getJobSellDraft(selectedJob)}
+                    costValue={getJobCostValue(selectedJob)}
+                    pricingStatus={getPricingStatus(selectedJob)}
+                    editing={
+                      editingJobSellId === selectedJob.id ||
+                      getPricingStatus(selectedJob) !== "set"
+                    }
+                    onStartEdit={() => startJobSellEdit(selectedJob)}
+                    onChange={(value) =>
+                      updateJobSellDraft(selectedJob.id, value)
+                    }
+                    onSave={() => saveJobSellForJob(selectedJob)}
+                  />
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState
+                title="No job selected"
+                text="Select a job to view details."
+              />
+            )
+          }
         />
       </PageSection>
     </div>
@@ -4969,27 +7613,85 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection
         title="Work Orders"
-        action={<button className="primary-button" onClick={() => openModal("workOrder")}>Create Work Order</button>}
+        action={
+          <button
+            className="primary-button"
+            onClick={() => openModal("workOrder")}
+          >
+            Create Work Order
+          </button>
+        }
       >
-        {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
-        {workOrdersLoading ? <div className="inline-notice info">Loading Firestore work orders...</div> : null}
-        {workOrdersError ? <div className="inline-notice error">Firestore work orders unavailable: {workOrdersError}.</div> : null}
+        {sellSaveNotice ? (
+          <div className={`inline-notice ${sellSaveNotice.type}`}>
+            {sellSaveNotice.message}
+          </div>
+        ) : null}
+        {workOrdersLoading ? (
+          <div className="inline-notice info">
+            Loading Firestore work orders...
+          </div>
+        ) : null}
+        {workOrdersError ? (
+          <div className="inline-notice error">
+            Firestore work orders unavailable: {workOrdersError}.
+          </div>
+        ) : null}
         <SplitView
           list={
             <div className="list-stack">
               <div className="list-toolbar">
-                <SearchBar value={workOrderSearch} onChange={setWorkOrderSearch} placeholder="Search work orders" />
-                <FilterRow label="Filter" value={workOrderFilter} options={WORK_ORDER_FILTERS} onChange={setWorkOrderFilter} />
+                <SearchBar
+                  value={workOrderSearch}
+                  onChange={setWorkOrderSearch}
+                  placeholder="Search work orders"
+                />
+                <FilterRow
+                  label="Filter"
+                  value={workOrderFilter}
+                  options={WORK_ORDER_FILTERS}
+                  onChange={setWorkOrderFilter}
+                />
               </div>
               <div className="list-scroll">
                 <DataTable
                   columns={[
-                    { key: "reference", label: "AMS Ref", render: (row) => row.amsWorkOrderNumber },
-                    ...(showExternalWorkOrder ? [{ key: "external", label: "External Ref", render: (row) => row.externalWorkOrderNumber || "Not set" }] : []),
-                    { key: "siteName", label: "Site", render: (row) => row.siteName },
-                    { key: "serviceType", label: "Service Type", render: (row) => row.serviceType },
-                    { key: "bids", label: "Bids", render: (row) => getBidCountForWorkOrder(appState.proposals, row.id) },
-                    { key: "status", label: "Status", render: (row) => <WorkOrderStatusBadge workOrder={row} /> },
+                    {
+                      key: "reference",
+                      label: "AMS Ref",
+                      render: (row) => row.amsWorkOrderNumber,
+                    },
+                    ...(showExternalWorkOrder
+                      ? [
+                          {
+                            key: "external",
+                            label: "External Ref",
+                            render: (row) =>
+                              row.externalWorkOrderNumber || "Not set",
+                          },
+                        ]
+                      : []),
+                    {
+                      key: "siteName",
+                      label: "Site",
+                      render: (row) => row.siteName,
+                    },
+                    {
+                      key: "serviceType",
+                      label: "Service Type",
+                      render: (row) => row.serviceType,
+                    },
+                    {
+                      key: "bids",
+                      label: "Bids",
+                      render: (row) =>
+                        getBidCountForWorkOrder(appState.proposals, row.id),
+                    },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (row) => <WorkOrderStatusBadge workOrder={row} />,
+                    },
                   ]}
                   rows={filteredWorkOrders}
                   selectedRowId={selectedWorkOrder?.id}
@@ -5010,43 +7712,189 @@ function AppBuild03() {
                       <p>{selectedWorkOrder.description}</p>
                     </div>
                     <div className="proposal-summary-badges">
-                      {shouldShowProposalStateBadge(selectedWorkOrder) ? <ProposalStateBadge value={selectedWorkOrder.proposalState} /> : null}
+                      {shouldShowProposalStateBadge(selectedWorkOrder) ? (
+                        <ProposalStateBadge
+                          value={selectedWorkOrder.proposalState}
+                        />
+                      ) : null}
                       <WorkOrderStatusBadge workOrder={selectedWorkOrder} />
                     </div>
                   </div>
                   <div className="proposal-summary-grid">
-                    <div><span className="detail-label">AMS Work Order</span><p>{selectedWorkOrder.amsWorkOrderNumber}</p></div>
-                    <div><span className="detail-label">Service Type</span><p>{selectedWorkOrder.serviceType}</p></div>
-                    <div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedWorkOrder.workType)}</p></div>
-                    <div><span className="detail-label">Primary Assigned Vendor</span><p>{selectedWorkOrder.assignedVendorName || "Not assigned"}</p></div>
-                    <div><span className="detail-label">Bid Count</span><p>{getBidCountForWorkOrder(appState.proposals, selectedWorkOrder.id)}</p></div>
-                    {selectedWorkOrder.workType === "recurring" && isAmsViewer ? <div><span className="detail-label">Recurring Vendor Cost</span><p>{formatMoney(selectedWorkOrder.recurringVendorCost)}</p></div> : null}
-                    <div><span className="detail-label">Job Link</span><p>{selectedWorkOrder.jobId || "No job created yet"}</p></div>
-                    <div><span className="detail-label">Proposal Requested</span><p>{formatDate(selectedWorkOrder.proposalRequestedAt)}</p></div>
-                    <div><span className="detail-label">Proposal Awarded</span><p>{formatDate(selectedWorkOrder.proposalAwardedAt)}</p></div>
+                    <div>
+                      <span className="detail-label">AMS Work Order</span>
+                      <p>{selectedWorkOrder.amsWorkOrderNumber}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Service Type</span>
+                      <p>{selectedWorkOrder.serviceType}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Work Type</span>
+                      <p>{getWorkTypeLabel(selectedWorkOrder.workType)}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">
+                        Primary Assigned Vendor
+                      </span>
+                      <p>
+                        {selectedWorkOrder.assignedVendorName || "Not assigned"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Bid Count</span>
+                      <p>
+                        {getBidCountForWorkOrder(
+                          appState.proposals,
+                          selectedWorkOrder.id,
+                        )}
+                      </p>
+                    </div>
+                    {selectedWorkOrder.workType === "recurring" &&
+                    isAmsViewer ? (
+                      <div>
+                        <span className="detail-label">
+                          Recurring Vendor Cost
+                        </span>
+                        <p>
+                          {formatMoney(selectedWorkOrder.recurringVendorCost)}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="detail-label">Job Link</span>
+                      <p>{selectedWorkOrder.jobId || "No job created yet"}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Proposal Requested</span>
+                      <p>{formatDate(selectedWorkOrder.proposalRequestedAt)}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Proposal Awarded</span>
+                      <p>{formatDate(selectedWorkOrder.proposalAwardedAt)}</p>
+                    </div>
                   </div>
                   <InputRow>
-                    {showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderDetailForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}
-                    <Field label="Before / After Photos Required"><select value={workOrderDetailForm.requireBeforeAfterPhotos ? "yes" : "no"} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.value === "yes" }))}><option value="no">No</option><option value="yes">Yes</option></select></Field>
-                    {selectedWorkOrder.workType === "recurring" && isAmsViewer ? <Field label="Vendor Cost"><input value={workOrderDetailForm.recurringVendorCost} onChange={(event) => setWorkOrderDetailForm((current) => ({ ...current, recurringVendorCost: event.target.value }))} placeholder="Enter recurring vendor cost" /></Field> : null}
+                    {showExternalWorkOrder ? (
+                      <Field label="External Work Order Number">
+                        <input
+                          value={workOrderDetailForm.externalWorkOrderNumber}
+                          onChange={(event) =>
+                            setWorkOrderDetailForm((current) => ({
+                              ...current,
+                              externalWorkOrderNumber: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                    ) : null}
+                    <Field label="Before / After Photos Required">
+                      <select
+                        value={
+                          workOrderDetailForm.requireBeforeAfterPhotos
+                            ? "yes"
+                            : "no"
+                        }
+                        onChange={(event) =>
+                          setWorkOrderDetailForm((current) => ({
+                            ...current,
+                            requireBeforeAfterPhotos:
+                              event.target.value === "yes",
+                          }))
+                        }
+                      >
+                        <option value="no">No</option>
+                        <option value="yes">Yes</option>
+                      </select>
+                    </Field>
+                    {selectedWorkOrder.workType === "recurring" &&
+                    isAmsViewer ? (
+                      <Field label="Vendor Cost">
+                        <input
+                          value={workOrderDetailForm.recurringVendorCost}
+                          onChange={(event) =>
+                            setWorkOrderDetailForm((current) => ({
+                              ...current,
+                              recurringVendorCost: event.target.value,
+                            }))
+                          }
+                          placeholder="Enter recurring vendor cost"
+                        />
+                      </Field>
+                    ) : null}
                   </InputRow>
                   <div className="form-actions">
-                    <button className="secondary-button" onClick={saveWorkOrderDetail}>Save Detail Updates</button>
-                    <button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button>
+                    <button
+                      className="secondary-button"
+                      onClick={saveWorkOrderDetail}
+                    >
+                      Save Detail Updates
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        showPlaceholder(
+                          "File and image uploads require backend support and will be added in a later build.",
+                        )
+                      }
+                    >
+                      Attach File / Upload Picture
+                    </button>
                   </div>
                 </div>
-                {isAmsViewer && selectedWorkOrderJob ? <div className="detail-card"><SellControl sellValue={getJobSellDraft(selectedWorkOrderJob)} costValue={getJobCostValue(selectedWorkOrderJob)} pricingStatus={getPricingStatus(selectedWorkOrderJob)} editing={editingJobSellId === selectedWorkOrderJob.id || getPricingStatus(selectedWorkOrderJob) !== "set"} onStartEdit={() => startJobSellEdit(selectedWorkOrderJob)} onChange={(value) => updateJobSellDraft(selectedWorkOrderJob.id, value)} onSave={() => saveJobSellForJob(selectedWorkOrderJob)} /></div> : null}
+                {isAmsViewer && selectedWorkOrderJob ? (
+                  <div className="detail-card">
+                    <SellControl
+                      sellValue={getJobSellDraft(selectedWorkOrderJob)}
+                      costValue={getJobCostValue(selectedWorkOrderJob)}
+                      pricingStatus={getPricingStatus(selectedWorkOrderJob)}
+                      editing={
+                        editingJobSellId === selectedWorkOrderJob.id ||
+                        getPricingStatus(selectedWorkOrderJob) !== "set"
+                      }
+                      onStartEdit={() => startJobSellEdit(selectedWorkOrderJob)}
+                      onChange={(value) =>
+                        updateJobSellDraft(selectedWorkOrderJob.id, value)
+                      }
+                      onSave={() => saveJobSellForJob(selectedWorkOrderJob)}
+                    />
+                  </div>
+                ) : null}
                 {selectedWorkOrder.proposalRequired ? (
                   <>
-                    <PageSection title={`Proposal Review List (${getBidCountForWorkOrder(appState.proposals, selectedWorkOrder.id)} bids)`}>
+                    <PageSection
+                      title={`Proposal Review List (${getBidCountForWorkOrder(appState.proposals, selectedWorkOrder.id)} bids)`}
+                    >
                       <div className="proposal-list-scroll">
                         <DataTable
                           columns={[
-                            { key: "vendor", label: "Crew", render: (row) => row.vendorCompanyName },
-                            { key: "submittedPrice", label: "Submitted Cost", render: (row) => formatMoney(row.submittedPrice) },
-                            { key: "reviewedPrice", label: "Reviewed Cost", render: (row) => formatMoney(row.reviewedPrice) },
-                            { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> },
-                            { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) },
+                            {
+                              key: "vendor",
+                              label: "Crew",
+                              render: (row) => row.vendorCompanyName,
+                            },
+                            {
+                              key: "submittedPrice",
+                              label: "Submitted Cost",
+                              render: (row) => formatMoney(row.submittedPrice),
+                            },
+                            {
+                              key: "reviewedPrice",
+                              label: "Reviewed Cost",
+                              render: (row) => formatMoney(row.reviewedPrice),
+                            },
+                            {
+                              key: "status",
+                              label: "Status",
+                              render: (row) => (
+                                <ProposalStatusBadge value={row.status} />
+                              ),
+                            },
+                            {
+                              key: "submittedAt",
+                              label: "Submitted At",
+                              render: (row) => formatDate(row.submittedAt),
+                            },
                           ]}
                           rows={selectedWorkOrderProposals}
                           selectedRowId={selectedWorkOrderProposal?.id}
@@ -5055,23 +7903,96 @@ function AppBuild03() {
                           emptyText="Crew proposals will appear here."
                         />
                       </div>
-                      {selectedWorkOrderBidderNames.length ? <p className="detail-muted">Bidders: {selectedWorkOrderBidderNames.join(", ")}</p> : null}
+                      {selectedWorkOrderBidderNames.length ? (
+                        <p className="detail-muted">
+                          Bidders: {selectedWorkOrderBidderNames.join(", ")}
+                        </p>
+                      ) : null}
                     </PageSection>
                     <PageSection title="Proposal Decision Panel">
-                      {renderProposalDecision(selectedWorkOrderProposal, selectedWorkOrder)}
+                      {renderProposalDecision(
+                        selectedWorkOrderProposal,
+                        selectedWorkOrder,
+                      )}
                     </PageSection>
                   </>
                 ) : (
                   <div className="detail-card">
                     <div className="proposal-summary-grid">
-                      <div><span className="detail-label">Assignment</span><div className="assignment-cell"><select value={jobAssignment[selectedWorkOrder.id] || selectedWorkOrder.assignedVendorId || ""} disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onChange={(event) => setJobAssignment((current) => ({ ...current, [selectedWorkOrder.id]: event.target.value }))}><option value="">Select vendor</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select><button className="secondary-button" disabled={Boolean(appState.jobs.find((job) => job.workOrderId === selectedWorkOrder.id))} onClick={() => assignVendorToWorkOrder(selectedWorkOrder.id)}>Assign + Create Job</button></div></div>
-                      <div><span className="detail-label">Work Order Status</span><select value={selectedWorkOrder.status} onChange={(event) => updateWorkOrderStatus(selectedWorkOrder.id, event.target.value)}>{WORK_ORDER_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></div>
+                      <div>
+                        <span className="detail-label">Assignment</span>
+                        <div className="assignment-cell">
+                          <select
+                            value={
+                              jobAssignment[selectedWorkOrder.id] ||
+                              selectedWorkOrder.assignedVendorId ||
+                              ""
+                            }
+                            disabled={Boolean(
+                              appState.jobs.find(
+                                (job) =>
+                                  job.workOrderId === selectedWorkOrder.id,
+                              ),
+                            )}
+                            onChange={(event) =>
+                              setJobAssignment((current) => ({
+                                ...current,
+                                [selectedWorkOrder.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select vendor</option>
+                            {normalizedVendors
+                              .filter((vendor) => vendor.active)
+                              .map((vendor) => (
+                                <option key={vendor.id} value={vendor.id}>
+                                  {vendor.companyName || vendor.name}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            className="secondary-button"
+                            disabled={Boolean(
+                              appState.jobs.find(
+                                (job) =>
+                                  job.workOrderId === selectedWorkOrder.id,
+                              ),
+                            )}
+                            onClick={() =>
+                              assignVendorToWorkOrder(selectedWorkOrder.id)
+                            }
+                          >
+                            Assign + Create Job
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="detail-label">Work Order Status</span>
+                        <select
+                          value={selectedWorkOrder.status}
+                          onChange={(event) =>
+                            updateWorkOrderStatus(
+                              selectedWorkOrder.id,
+                              event.target.value,
+                            )
+                          }
+                        >
+                          {WORK_ORDER_STATUS.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             ) : (
-              <EmptyState title="No work order selected" text="Select a work order to review details." />
+              <EmptyState
+                title="No work order selected"
+                text="Select a work order to review details."
+              />
             )
           }
         />
@@ -5081,21 +8002,198 @@ function AppBuild03() {
 
   const proposalsScreen = (
     <div className="screen-grid">
-      {proposalsLoading ? <div className="inline-notice info">Loading Firestore proposals...</div> : null}
-      {proposalsError ? <div className="inline-notice error">Firestore proposals unavailable: {proposalsError}</div> : null}
+      {proposalsLoading ? (
+        <div className="inline-notice info">Loading Firestore proposals...</div>
+      ) : null}
+      {proposalsError ? (
+        <div className="inline-notice error">
+          Firestore proposals unavailable: {proposalsError}
+        </div>
+      ) : null}
       <PageSection title="Proposal Pipeline">
-        <StatGrid items={[
-          { label: "Pending", value: appState.proposals.filter((proposal) => proposal.status === "submitted").length },
-          { label: "Active", value: appState.proposals.filter((proposal) => proposal.isActivePath).length },
-          { label: "Approved", value: appState.proposals.filter((proposal) => proposal.status === "approved").length },
-          { label: "Rejected", value: appState.proposals.filter((proposal) => proposal.status === "rejected").length },
-          { label: "Revision Needed", value: appState.proposals.filter((proposal) => proposal.status === "revision_requested").length },
-        ]} />
+        <StatGrid
+          items={[
+            {
+              label: "Pending",
+              value: appState.proposals.filter(
+                (proposal) => proposal.status === "submitted",
+              ).length,
+            },
+            {
+              label: "Active",
+              value: appState.proposals.filter(
+                (proposal) => proposal.isActivePath,
+              ).length,
+            },
+            {
+              label: "Approved",
+              value: appState.proposals.filter(
+                (proposal) => proposal.status === "approved",
+              ).length,
+            },
+            {
+              label: "Rejected",
+              value: appState.proposals.filter(
+                (proposal) => proposal.status === "rejected",
+              ).length,
+            },
+            {
+              label: "Revision Needed",
+              value: appState.proposals.filter(
+                (proposal) => proposal.status === "revision_requested",
+              ).length,
+            },
+          ]}
+        />
       </PageSection>
       <PageSection title="Proposals">
         <SplitView
-          list={<div className="list-stack"><div className="list-toolbar"><SearchBar value={proposalSearch} onChange={setProposalSearch} placeholder="Search proposals" /><FilterRow label="Status" value={proposalStatusFilter} options={["All", "submitted", "revision_requested", "approved", "rejected", "withdrawn"]} onChange={setProposalStatusFilter} /></div><div className="list-scroll"><DataTable columns={[{ key: "crew", label: "Crew", render: (row) => row.vendorCompanyName }, { key: "site", label: "Site", render: (row) => appState.workOrders.find((entry) => entry.id === row.workOrderId)?.siteName || row.siteName || "Unknown" }, { key: "price", label: "Submitted Cost", render: (row) => formatMoney(row.submittedPrice) }, { key: "reviewedPrice", label: "Reviewed Cost", render: (row) => formatMoney(row.reviewedPrice) }, { key: "status", label: "Status", render: (row) => <ProposalStatusBadge value={row.status} /> }]} rows={filteredProposals} selectedRowId={selectedProposal?.id} onRowClick={(row) => setSelectedProposalId(row.id)} emptyTitle="No proposals" emptyText="Proposal submissions will appear here." /></div></div>}
-            detail={<div className="detail-stack"><PageSection title="Work Order Summary">{selectedProposal ? (() => { const workOrder = appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId); return workOrder ? <div className="proposal-review-summary"><div className="proposal-summary-top"><div><strong>{workOrder.siteName}</strong><p>{workOrder.description}</p></div><div className="proposal-summary-badges">{shouldShowProposalStateBadge(workOrder) ? <ProposalStateBadge value={workOrder.proposalState} /> : null}<WorkOrderStatusBadge workOrder={workOrder} /></div></div><div className="proposal-summary-grid"><div><span className="detail-label">AMS Work Order</span><p>{workOrder.amsWorkOrderNumber}</p></div><div><span className="detail-label">Service Type</span><p>{workOrder.serviceType}</p></div>{showExternalWorkOrder ? <div><span className="detail-label">External Ref</span><p>{workOrder.externalWorkOrderNumber || "Not set"}</p></div> : null}<div><span className="detail-label">Photos Required</span><p>{workOrder.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div></div></div> : <EmptyState title="No work order found" text="This proposal is missing its work order reference." />; })() : <EmptyState title="No proposal selected" text="Choose a proposal to review." />}</PageSection><PageSection title="Proposal Decision Panel">{renderProposalDecision(selectedProposal, selectedProposal ? appState.workOrders.find((entry) => entry.id === selectedProposal.workOrderId) : null)}</PageSection></div>}
+          list={
+            <div className="list-stack">
+              <div className="list-toolbar">
+                <SearchBar
+                  value={proposalSearch}
+                  onChange={setProposalSearch}
+                  placeholder="Search proposals"
+                />
+                <FilterRow
+                  label="Status"
+                  value={proposalStatusFilter}
+                  options={[
+                    "All",
+                    "submitted",
+                    "revision_requested",
+                    "approved",
+                    "rejected",
+                    "withdrawn",
+                  ]}
+                  onChange={setProposalStatusFilter}
+                />
+              </div>
+              <div className="list-scroll">
+                <DataTable
+                  columns={[
+                    {
+                      key: "crew",
+                      label: "Crew",
+                      render: (row) => row.vendorCompanyName,
+                    },
+                    {
+                      key: "site",
+                      label: "Site",
+                      render: (row) =>
+                        appState.workOrders.find(
+                          (entry) => entry.id === row.workOrderId,
+                        )?.siteName ||
+                        row.siteName ||
+                        "Unknown",
+                    },
+                    {
+                      key: "price",
+                      label: "Submitted Cost",
+                      render: (row) => formatMoney(row.submittedPrice),
+                    },
+                    {
+                      key: "reviewedPrice",
+                      label: "Reviewed Cost",
+                      render: (row) => formatMoney(row.reviewedPrice),
+                    },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (row) => (
+                        <ProposalStatusBadge value={row.status} />
+                      ),
+                    },
+                  ]}
+                  rows={filteredProposals}
+                  selectedRowId={selectedProposal?.id}
+                  onRowClick={(row) => setSelectedProposalId(row.id)}
+                  emptyTitle="No proposals"
+                  emptyText="Proposal submissions will appear here."
+                />
+              </div>
+            </div>
+          }
+          detail={
+            <div className="detail-stack">
+              <PageSection title="Work Order Summary">
+                {selectedProposal ? (
+                  (() => {
+                    const workOrder = appState.workOrders.find(
+                      (entry) => entry.id === selectedProposal.workOrderId,
+                    );
+                    return workOrder ? (
+                      <div className="proposal-review-summary">
+                        <div className="proposal-summary-top">
+                          <div>
+                            <strong>{workOrder.siteName}</strong>
+                            <p>{workOrder.description}</p>
+                          </div>
+                          <div className="proposal-summary-badges">
+                            {shouldShowProposalStateBadge(workOrder) ? (
+                              <ProposalStateBadge
+                                value={workOrder.proposalState}
+                              />
+                            ) : null}
+                            <WorkOrderStatusBadge workOrder={workOrder} />
+                          </div>
+                        </div>
+                        <div className="proposal-summary-grid">
+                          <div>
+                            <span className="detail-label">AMS Work Order</span>
+                            <p>{workOrder.amsWorkOrderNumber}</p>
+                          </div>
+                          <div>
+                            <span className="detail-label">Service Type</span>
+                            <p>{workOrder.serviceType}</p>
+                          </div>
+                          {showExternalWorkOrder ? (
+                            <div>
+                              <span className="detail-label">External Ref</span>
+                              <p>
+                                {workOrder.externalWorkOrderNumber || "Not set"}
+                              </p>
+                            </div>
+                          ) : null}
+                          <div>
+                            <span className="detail-label">
+                              Photos Required
+                            </span>
+                            <p>
+                              {workOrder.requireBeforeAfterPhotos
+                                ? "Yes"
+                                : "No"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <EmptyState
+                        title="No work order found"
+                        text="This proposal is missing its work order reference."
+                      />
+                    );
+                  })()
+                ) : (
+                  <EmptyState
+                    title="No proposal selected"
+                    text="Choose a proposal to review."
+                  />
+                )}
+              </PageSection>
+              <PageSection title="Proposal Decision Panel">
+                {renderProposalDecision(
+                  selectedProposal,
+                  selectedProposal
+                    ? appState.workOrders.find(
+                        (entry) => entry.id === selectedProposal.workOrderId,
+                      )
+                    : null,
+                )}
+              </PageSection>
+            </div>
+          }
         />
       </PageSection>
     </div>
@@ -5103,13 +8201,500 @@ function AppBuild03() {
 
   const accountingScreen = (
     <div className="screen-grid accounting-screen">
-      {sellSaveNotice ? <div className={`inline-notice ${sellSaveNotice.type}`}>{sellSaveNotice.message}</div> : null}
-      {invoicesLoading ? <div className="inline-notice">Loading Firestore invoices...</div> : null}
-      {invoicesError ? <div className="inline-notice error">Invoice data could not be loaded: {invoicesError}</div> : null}
-      <PageSection title="Accounting Snapshot"><StatGrid items={[{ label: "Ready for Invoice", value: readyForInvoiceJobs.length }, { label: "Sell Missing", value: jobsMissingSell.length }, { label: "Submitted", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Submitted").length }, { label: "Approved", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Approved").length }, { label: "Rejected", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Rejected").length }, { label: "Paid", value: appState.invoices.filter((invoice) => normalizeInvoiceStatus(invoice.status) === "Paid").length }]} /></PageSection>
+      {sellSaveNotice ? (
+        <div className={`inline-notice ${sellSaveNotice.type}`}>
+          {sellSaveNotice.message}
+        </div>
+      ) : null}
+      {invoicesLoading ? (
+        <div className="inline-notice">Loading Firestore invoices...</div>
+      ) : null}
+      {invoicesError ? (
+        <div className="inline-notice error">
+          Invoice data could not be loaded: {invoicesError}
+        </div>
+      ) : null}
+      <PageSection title="Accounting Snapshot">
+        <StatGrid
+          items={[
+            { label: "Ready for Invoice", value: readyForInvoiceJobs.length },
+            { label: "Sell Missing", value: jobsMissingSell.length },
+            {
+              label: "Submitted",
+              value: appState.invoices.filter(
+                (invoice) =>
+                  normalizeInvoiceStatus(invoice.status) === "Submitted",
+              ).length,
+            },
+            {
+              label: "Approved",
+              value: appState.invoices.filter(
+                (invoice) =>
+                  normalizeInvoiceStatus(invoice.status) === "Approved",
+              ).length,
+            },
+            {
+              label: "Rejected",
+              value: appState.invoices.filter(
+                (invoice) =>
+                  normalizeInvoiceStatus(invoice.status) === "Rejected",
+              ).length,
+            },
+            {
+              label: "Paid",
+              value: appState.invoices.filter(
+                (invoice) => normalizeInvoiceStatus(invoice.status) === "Paid",
+              ).length,
+            },
+          ]}
+        />
+      </PageSection>
       <SplitView
-        list={<div className="detail-stack"><PageSection title="Ready for Invoice Queue"><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "service", label: "Service Type", render: (row) => row.serviceType }, { key: "status", label: "Job Status", render: (row) => row.status }, { key: "cost", label: "Cost", render: (row) => formatMoney(getJobCostValue(row)) }, { key: "sell", label: "Sell", render: (row) => formatMoney(getJobSellValue(row)) }, { key: "pricing", label: "Pricing", render: (row) => <StatusBadge value={getPricingStatus(row)} label={getPricingStatus(row) === "set" ? "Sell Set" : "Sell Not Set"} /> }, { key: "action", label: "Action", render: () => <span className="detail-muted">Awaiting crew submission</span> }]} rows={readyForInvoiceJobs} emptyTitle="No jobs ready" emptyText="Completed jobs without invoices will appear here." /></div></PageSection><PageSection title="Invoice Tracker"><div className="list-stack"><div className="list-toolbar"><SearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search invoices" /><FilterRow label="Status" value={invoiceStatusFilter} options={["All", ...INVOICE_STATUS]} onChange={setInvoiceStatusFilter} /></div><div className="list-scroll compact-scroll contained-scroll"><DataTable columns={[{ key: "invoiceNumber", label: "Invoice Number", render: (row) => row.invoiceNumber || "Not set" }, { key: "site", label: "Site", render: (row) => row.siteName }, { key: "crew", label: "Crew", render: (row) => row.vendorName }, { key: "amount", label: "Cost", render: (row) => formatMoney(row.amount) }, { key: "submittedAt", label: "Submitted At", render: (row) => formatDate(row.submittedAt) }, { key: "status", label: "Status", render: (row) => <InvoiceStatusBadge value={row.status} /> }, { key: "download", label: "Download", render: (row) => <button className="secondary-button" disabled={!["Approved", "Paid"].includes(row.status)} onClick={(event) => { event.stopPropagation(); downloadInvoice(row); }}>Download Invoice</button> }]} rows={filteredInvoices} selectedRowId={selectedInvoice?.id} onRowClick={(row) => setSelectedInvoiceId(row.id)} emptyTitle="No invoices" emptyText="Invoice records will appear here." /></div></div></PageSection></div>}
-        detail={<PageSection title="Invoice Editor Panel">{selectedInvoice ? <div className="detail-stack"><div className="proposal-summary-grid"><div><span className="detail-label">Site</span><p>{selectedInvoice.siteName}</p></div><div><span className="detail-label">Crew</span><p>{selectedInvoice.vendorName}</p></div><div><span className="detail-label">Service Type</span><p>{selectedInvoice.serviceType}</p></div><div><span className="detail-label">Job Status</span><p>{selectedInvoiceJob?.status || selectedInvoice.jobStatus}</p></div><div><span className="detail-label">Cost</span><p>{formatMoney(getJobCostValue(selectedInvoiceJob) || selectedInvoice.amount)}</p></div><div><span className="detail-label">Sell</span><p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p></div><div><span className="detail-label">Pricing Status</span><p><StatusBadge value={getPricingStatus(selectedInvoiceJob)} label={getPricingStatus(selectedInvoiceJob) === "set" ? "Sell Set" : "Sell Not Set"} /></p></div><div><span className="detail-label">Sell Set At</span><p>{selectedInvoiceJob?.sellSetAt ? formatDate(selectedInvoiceJob.sellSetAt) : "Not set"}</p></div></div><InputRow><Field label="Invoice Number"><input value={invoiceForm.invoiceNumber} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceNumber: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Invoice Date"><input type="date" value={invoiceForm.invoiceDate ? invoiceForm.invoiceDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoiceDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Due Date"><input type="date" value={invoiceForm.dueDate ? invoiceForm.dueDate.slice(0, 10) : ""} onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Terms"><input value={invoiceForm.terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, terms: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field><Field label="Status"><select value={invoiceForm.status} onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))} disabled={selectedInvoice.status === "Paid"}>{INVOICE_STATUS.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field><Field label="Notes"><textarea rows="5" value={invoiceForm.notes} onChange={(event) => setInvoiceForm((current) => ({ ...current, notes: event.target.value }))} disabled={selectedInvoice.status === "Paid"} /></Field></InputRow><div className="invoice-line-items">{invoiceForm.lineItems.map((lineItem) => <div key={lineItem.id} className="invoice-line-item"><input value={lineItem.service} onChange={(event) => updateInvoiceLineItem(lineItem.id, "service", event.target.value)} placeholder="Service" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.description} onChange={(event) => updateInvoiceLineItem(lineItem.id, "description", event.target.value)} placeholder="Description" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.qty} onChange={(event) => updateInvoiceLineItem(lineItem.id, "qty", event.target.value)} placeholder="Qty" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.rate} onChange={(event) => updateInvoiceLineItem(lineItem.id, "rate", event.target.value)} placeholder="Rate" disabled={selectedInvoice.status === "Paid"} /><input value={lineItem.amount} readOnly placeholder="Amount" /><button className="secondary-button danger-button" onClick={() => removeInvoiceLineItem(lineItem.id)} disabled={selectedInvoice.status === "Paid"}>Remove</button></div>)}{selectedInvoice.status !== "Paid" ? <button className="secondary-button" onClick={addInvoiceLineItem}>Add Line Item</button> : null}</div>{selectedInvoiceJob ? <><CostControl costValue={accountingCostForm} editing={editingAccountingCostJobId === selectedInvoiceJob.id} onStartEdit={() => setEditingAccountingCostJobId(selectedInvoiceJob.id)} onChange={setAccountingCostForm} onSave={saveAccountingCost} disabled={selectedInvoice.status === "Paid"} /><SellControl sellValue={accountingSellForm} costValue={accountingCostForm} pricingStatus={getPricingStatus(selectedInvoiceJob)} editing={editingAccountingSellJobId === selectedInvoiceJob.id || getPricingStatus(selectedInvoiceJob) !== "set"} onStartEdit={() => setEditingAccountingSellJobId(selectedInvoiceJob.id)} onChange={setAccountingSellForm} onSave={saveAccountingSell} disabled={selectedInvoice.status === "Paid"} /></> : null}<div className="proposal-summary-grid"><div><span className="detail-label">Invoice Total</span><p>{formatMoney(invoiceForm.total)}</p></div></div><div className="decision-actions"><button className="secondary-button" onClick={saveInvoice} disabled={selectedInvoice.status === "Paid"}>Save Invoice</button><button className="secondary-button" onClick={() => updateInvoiceStatus("Approved")} disabled={selectedInvoice.status === "Paid"}>Approve Invoice</button><button className="secondary-button danger-button" onClick={() => updateInvoiceStatus("Rejected")} disabled={selectedInvoice.status === "Paid"}>Reject Invoice</button><button className="primary-button" onClick={() => updateInvoiceStatus("Paid")} disabled={selectedInvoice.status === "Paid"}>Mark Paid / Close Job</button></div></div> : <EmptyState title="No invoice selected" text="Select an invoice to edit." />}</PageSection>}
+        list={
+          <div className="detail-stack">
+            <PageSection title="Ready for Invoice Queue">
+              <div className="list-scroll compact-scroll contained-scroll">
+                <DataTable
+                  columns={[
+                    {
+                      key: "site",
+                      label: "Site",
+                      render: (row) => row.siteName,
+                    },
+                    {
+                      key: "crew",
+                      label: "Crew",
+                      render: (row) => row.vendorName,
+                    },
+                    {
+                      key: "service",
+                      label: "Service Type",
+                      render: (row) => row.serviceType,
+                    },
+                    {
+                      key: "status",
+                      label: "Job Status",
+                      render: (row) => row.status,
+                    },
+                    {
+                      key: "cost",
+                      label: "Cost",
+                      render: (row) => formatMoney(getJobCostValue(row)),
+                    },
+                    {
+                      key: "sell",
+                      label: "Sell",
+                      render: (row) => formatMoney(getJobSellValue(row)),
+                    },
+                    {
+                      key: "pricing",
+                      label: "Pricing",
+                      render: (row) => (
+                        <StatusBadge
+                          value={getPricingStatus(row)}
+                          label={
+                            getPricingStatus(row) === "set"
+                              ? "Sell Set"
+                              : "Sell Not Set"
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: "action",
+                      label: "Action",
+                      render: () => (
+                        <span className="detail-muted">
+                          Awaiting crew submission
+                        </span>
+                      ),
+                    },
+                  ]}
+                  rows={readyForInvoiceJobs}
+                  emptyTitle="No jobs ready"
+                  emptyText="Completed jobs without invoices will appear here."
+                />
+              </div>
+            </PageSection>
+            <PageSection title="Invoice Tracker">
+              <div className="list-stack">
+                <div className="list-toolbar">
+                  <SearchBar
+                    value={invoiceSearch}
+                    onChange={setInvoiceSearch}
+                    placeholder="Search invoices"
+                  />
+                  <FilterRow
+                    label="Status"
+                    value={invoiceStatusFilter}
+                    options={["All", ...INVOICE_STATUS]}
+                    onChange={setInvoiceStatusFilter}
+                  />
+                </div>
+                <div className="list-scroll compact-scroll contained-scroll">
+                  <DataTable
+                    columns={[
+                      {
+                        key: "invoiceNumber",
+                        label: "Invoice Number",
+                        render: (row) => row.invoiceNumber || "Not set",
+                      },
+                      {
+                        key: "site",
+                        label: "Site",
+                        render: (row) => row.siteName,
+                      },
+                      {
+                        key: "crew",
+                        label: "Crew",
+                        render: (row) => row.vendorName,
+                      },
+                      {
+                        key: "amount",
+                        label: "Cost",
+                        render: (row) => formatMoney(row.amount),
+                      },
+                      {
+                        key: "submittedAt",
+                        label: "Submitted At",
+                        render: (row) => formatDate(row.submittedAt),
+                      },
+                      {
+                        key: "status",
+                        label: "Status",
+                        render: (row) => (
+                          <InvoiceStatusBadge value={row.status} />
+                        ),
+                      },
+                      {
+                        key: "download",
+                        label: "Download",
+                        render: (row) => (
+                          <button
+                            className="secondary-button"
+                            disabled={
+                              !["Approved", "Paid"].includes(row.status)
+                            }
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              downloadInvoice(row);
+                            }}
+                          >
+                            Download Invoice
+                          </button>
+                        ),
+                      },
+                    ]}
+                    rows={filteredInvoices}
+                    selectedRowId={selectedInvoice?.id}
+                    onRowClick={(row) => setSelectedInvoiceId(row.id)}
+                    emptyTitle="No invoices"
+                    emptyText="Invoice records will appear here."
+                  />
+                </div>
+              </div>
+            </PageSection>
+          </div>
+        }
+        detail={
+          <PageSection title="Invoice Editor Panel">
+            {selectedInvoice ? (
+              <div className="detail-stack">
+                <div className="proposal-summary-grid">
+                  <div>
+                    <span className="detail-label">Site</span>
+                    <p>{selectedInvoice.siteName}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Crew</span>
+                    <p>{selectedInvoice.vendorName}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Service Type</span>
+                    <p>{selectedInvoice.serviceType}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Job Status</span>
+                    <p>
+                      {selectedInvoiceJob?.status || selectedInvoice.jobStatus}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Cost</span>
+                    <p>
+                      {formatMoney(
+                        getJobCostValue(selectedInvoiceJob) ||
+                          selectedInvoice.amount,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Sell</span>
+                    <p>{formatMoney(getJobSellValue(selectedInvoiceJob))}</p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Pricing Status</span>
+                    <p>
+                      <StatusBadge
+                        value={getPricingStatus(selectedInvoiceJob)}
+                        label={
+                          getPricingStatus(selectedInvoiceJob) === "set"
+                            ? "Sell Set"
+                            : "Sell Not Set"
+                        }
+                      />
+                    </p>
+                  </div>
+                  <div>
+                    <span className="detail-label">Sell Set At</span>
+                    <p>
+                      {selectedInvoiceJob?.sellSetAt
+                        ? formatDate(selectedInvoiceJob.sellSetAt)
+                        : "Not set"}
+                    </p>
+                  </div>
+                </div>
+                <InputRow>
+                  <Field label="Invoice Number">
+                    <input
+                      value={invoiceForm.invoiceNumber}
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          invoiceNumber: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </Field>
+                  <Field label="Invoice Date">
+                    <input
+                      type="date"
+                      value={
+                        invoiceForm.invoiceDate
+                          ? invoiceForm.invoiceDate.slice(0, 10)
+                          : ""
+                      }
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          invoiceDate: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </Field>
+                  <Field label="Due Date">
+                    <input
+                      type="date"
+                      value={
+                        invoiceForm.dueDate
+                          ? invoiceForm.dueDate.slice(0, 10)
+                          : ""
+                      }
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          dueDate: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </Field>
+                  <Field label="Terms">
+                    <input
+                      value={invoiceForm.terms}
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          terms: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </Field>
+                  <Field label="Status">
+                    <select
+                      value={invoiceForm.status}
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          status: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    >
+                      {INVOICE_STATUS.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Notes">
+                    <textarea
+                      rows="5"
+                      value={invoiceForm.notes}
+                      onChange={(event) =>
+                        setInvoiceForm((current) => ({
+                          ...current,
+                          notes: event.target.value,
+                        }))
+                      }
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </Field>
+                </InputRow>
+                <div className="invoice-line-items">
+                  {invoiceForm.lineItems.map((lineItem) => (
+                    <div key={lineItem.id} className="invoice-line-item">
+                      <input
+                        value={lineItem.service}
+                        onChange={(event) =>
+                          updateInvoiceLineItem(
+                            lineItem.id,
+                            "service",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Service"
+                        disabled={selectedInvoice.status === "Paid"}
+                      />
+                      <input
+                        value={lineItem.description}
+                        onChange={(event) =>
+                          updateInvoiceLineItem(
+                            lineItem.id,
+                            "description",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Description"
+                        disabled={selectedInvoice.status === "Paid"}
+                      />
+                      <input
+                        value={lineItem.qty}
+                        onChange={(event) =>
+                          updateInvoiceLineItem(
+                            lineItem.id,
+                            "qty",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Qty"
+                        disabled={selectedInvoice.status === "Paid"}
+                      />
+                      <input
+                        value={lineItem.rate}
+                        onChange={(event) =>
+                          updateInvoiceLineItem(
+                            lineItem.id,
+                            "rate",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Rate"
+                        disabled={selectedInvoice.status === "Paid"}
+                      />
+                      <input
+                        value={lineItem.amount}
+                        readOnly
+                        placeholder="Amount"
+                      />
+                      <button
+                        className="secondary-button danger-button"
+                        onClick={() => removeInvoiceLineItem(lineItem.id)}
+                        disabled={selectedInvoice.status === "Paid"}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  {selectedInvoice.status !== "Paid" ? (
+                    <button
+                      className="secondary-button"
+                      onClick={addInvoiceLineItem}
+                    >
+                      Add Line Item
+                    </button>
+                  ) : null}
+                </div>
+                {selectedInvoiceJob ? (
+                  <>
+                    <CostControl
+                      costValue={accountingCostForm}
+                      editing={
+                        editingAccountingCostJobId === selectedInvoiceJob.id
+                      }
+                      onStartEdit={() =>
+                        setEditingAccountingCostJobId(selectedInvoiceJob.id)
+                      }
+                      onChange={setAccountingCostForm}
+                      onSave={saveAccountingCost}
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                    <SellControl
+                      sellValue={accountingSellForm}
+                      costValue={accountingCostForm}
+                      pricingStatus={getPricingStatus(selectedInvoiceJob)}
+                      editing={
+                        editingAccountingSellJobId === selectedInvoiceJob.id ||
+                        getPricingStatus(selectedInvoiceJob) !== "set"
+                      }
+                      onStartEdit={() =>
+                        setEditingAccountingSellJobId(selectedInvoiceJob.id)
+                      }
+                      onChange={setAccountingSellForm}
+                      onSave={saveAccountingSell}
+                      disabled={selectedInvoice.status === "Paid"}
+                    />
+                  </>
+                ) : null}
+                <div className="proposal-summary-grid">
+                  <div>
+                    <span className="detail-label">Invoice Total</span>
+                    <p>{formatMoney(invoiceForm.total)}</p>
+                  </div>
+                </div>
+                <div className="decision-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={saveInvoice}
+                    disabled={selectedInvoice.status === "Paid"}
+                  >
+                    Save Invoice
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => updateInvoiceStatus("Approved")}
+                    disabled={selectedInvoice.status === "Paid"}
+                  >
+                    Approve Invoice
+                  </button>
+                  <button
+                    className="secondary-button danger-button"
+                    onClick={() => updateInvoiceStatus("Rejected")}
+                    disabled={selectedInvoice.status === "Paid"}
+                  >
+                    Reject Invoice
+                  </button>
+                  <button
+                    className="primary-button"
+                    onClick={() => updateInvoiceStatus("Paid")}
+                    disabled={selectedInvoice.status === "Paid"}
+                  >
+                    Mark Paid / Close Job
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                title="No invoice selected"
+                text="Select an invoice to edit."
+              />
+            )}
+          </PageSection>
+        }
       />
     </div>
   );
@@ -5120,7 +8705,10 @@ function AppBuild03() {
         title="AMS Team"
         action={
           canEditCrewIdentity(currentUser) ? (
-            <button className="primary-button" onClick={() => openModal("amsTeammate")}>
+            <button
+              className="primary-button"
+              onClick={() => openModal("amsTeammate")}
+            >
               Add AMS Teammate
             </button>
           ) : null
@@ -5132,10 +8720,26 @@ function AppBuild03() {
               <div className="list-scroll">
                 <DataTable
                   columns={[
-                    { key: "name", label: "Full Name", render: (row) => row.name },
-                    { key: "title", label: "Job Title", render: (row) => row.jobTitle || "Not set" },
-                    { key: "email", label: "Email", render: (row) => row.email },
-                    { key: "phone", label: "Phone", render: (row) => row.phone || "Not set" },
+                    {
+                      key: "name",
+                      label: "Full Name",
+                      render: (row) => row.name,
+                    },
+                    {
+                      key: "title",
+                      label: "Job Title",
+                      render: (row) => row.jobTitle || "Not set",
+                    },
+                    {
+                      key: "email",
+                      label: "Email",
+                      render: (row) => row.email,
+                    },
+                    {
+                      key: "phone",
+                      label: "Phone",
+                      render: (row) => row.phone || "Not set",
+                    },
                     { key: "role", label: "Role", render: (row) => row.role },
                   ]}
                   rows={amsTeamMembers}
@@ -5156,13 +8760,15 @@ function AppBuild03() {
                 <span className="detail-label">AMS Team Chat</span>
                 <strong>AMS Team Chat Coming Soon</strong>
                 <p className="detail-muted">
-                  Direct team messaging will be added later with backend support.
+                  Direct team messaging will be added later with backend
+                  support.
                 </p>
               </div>
               <div className="detail-card">
                 <span className="detail-label">Directory</span>
                 <p className="detail-muted">
-                  Click a teammate row to open the profile card with direct contact details.
+                  Click a teammate row to open the profile card with direct
+                  contact details.
                 </p>
               </div>
             </div>
@@ -5177,7 +8783,10 @@ function AppBuild03() {
       <PageSection title="Weather Command">
         <div className="weather-threat-strip">
           {weatherSummary.map((item) => (
-            <article key={item.key} className={`weather-threat-card ${item.key}`}>
+            <article
+              key={item.key}
+              className={`weather-threat-card ${item.key}`}
+            >
               <span className="detail-label">{item.label}</span>
               <strong>{item.value}</strong>
             </article>
@@ -5213,12 +8822,12 @@ function AppBuild03() {
                       site.status === "active"
                         ? "Active Event"
                         : site.status === "watch_24"
-                        ? "24 Hour Watch"
-                        : site.status === "watch_48"
-                        ? "48 Hour Watch"
-                        : site.status === "watch_72"
-                        ? "72 Hour Watch"
-                        : "No Threat"
+                          ? "24 Hour Watch"
+                          : site.status === "watch_48"
+                            ? "48 Hour Watch"
+                            : site.status === "watch_72"
+                              ? "72 Hour Watch"
+                              : "No Threat"
                     }
                   />
                 </div>
@@ -5235,32 +8844,383 @@ function AppBuild03() {
     <div className="screen-grid">
       <PageSection title="Profile">
         <div className="detail-stack">
-          <div className="profile-summary"><div><strong>{currentUser.name}</strong><p>{currentUser.email}</p></div><div className="status-pill active">{getDisplayRole(currentUser)}</div></div>
-          <article className="detail-card profile-photo-card"><span className="detail-label">Profile Photo</span><strong>Future Profile Picture</strong><p>{profileForm.profilePhotoStatus}</p><button className="secondary-button" onClick={() => showPlaceholder("Profile photo upload will be added in a later build.")}>Photo Upload Coming Soon</button></article>
-        <InputRow><Field label={isCrewUser(currentUser) ? "Point of Contact Name" : "Name"}><input value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={profileForm.email} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="New Password"><div className="password-field-wrap"><input type={showProfilePassword ? "text" : "password"} value={profileForm.password} placeholder="Firebase Auth only; leave blank to keep current password" onChange={(event) => { setProfilePasswordError(""); setProfileForm((current) => ({ ...current, password: event.target.value })); }} /><button type="button" className="password-toggle" onClick={() => setShowProfilePassword((current) => !current)} aria-label={showProfilePassword ? "Hide password" : "Show password"}>{showProfilePassword ? "Hide" : "Show"}</button></div></Field><Field label="Confirm Password"><div className="password-field-wrap"><input type={showProfilePassword ? "text" : "password"} value={profileForm.confirmPassword} placeholder="Re-enter new password" onChange={(event) => { setProfilePasswordError(""); setProfileForm((current) => ({ ...current, confirmPassword: event.target.value })); }} /><button type="button" className="password-toggle" onClick={() => setShowProfilePassword((current) => !current)} aria-label={showProfilePassword ? "Hide password" : "Show password"}>{showProfilePassword ? "Hide" : "Show"}</button></div></Field><Field label="Phone"><input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={profileForm.jobTitle} onChange={(event) => setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={profileForm.companyName} readOnly={isCrewUser(currentUser)} onChange={(event) => setProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={profileForm.streetAddress} onChange={(event) => setProfileForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={profileForm.state} onChange={(event) => setProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={profileForm.zip} onChange={(event) => setProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={profileForm.internalNotes} onChange={(event) => setProfileForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow>
-          {profilePasswordError ? <div className="inline-notice error">{profilePasswordError}</div> : null}
-          <div className="form-actions"><button className="primary-button" onClick={saveProfile}>Save Profile</button></div>
+          <div className="profile-summary">
+            <div>
+              <strong>{currentUser.name}</strong>
+              <p>{currentUser.email}</p>
+            </div>
+            <div className="status-pill active">
+              {getDisplayRole(currentUser)}
+            </div>
+          </div>
+          <article className="detail-card profile-photo-card">
+            <span className="detail-label">Profile Photo</span>
+            <strong>Future Profile Picture</strong>
+            <p>{profileForm.profilePhotoStatus}</p>
+            <button
+              className="secondary-button"
+              onClick={() =>
+                showPlaceholder(
+                  "Profile photo upload will be added in a later build.",
+                )
+              }
+            >
+              Photo Upload Coming Soon
+            </button>
+          </article>
+          <InputRow>
+            <Field
+              label={isCrewUser(currentUser) ? "Point of Contact Name" : "Name"}
+            >
+              <input
+                value={profileForm.name}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Email / Login">
+              <input
+                value={profileForm.email}
+                readOnly={isCrewUser(currentUser)}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="New Password">
+              <div className="password-field-wrap">
+                <input
+                  type={showProfilePassword ? "text" : "password"}
+                  value={profileForm.password}
+                  placeholder="Firebase Auth only; leave blank to keep current password"
+                  onChange={(event) => {
+                    setProfilePasswordError("");
+                    setProfileForm((current) => ({
+                      ...current,
+                      password: event.target.value,
+                    }));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowProfilePassword((current) => !current)}
+                  aria-label={
+                    showProfilePassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showProfilePassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </Field>
+            <Field label="Confirm Password">
+              <div className="password-field-wrap">
+                <input
+                  type={showProfilePassword ? "text" : "password"}
+                  value={profileForm.confirmPassword}
+                  placeholder="Re-enter new password"
+                  onChange={(event) => {
+                    setProfilePasswordError("");
+                    setProfileForm((current) => ({
+                      ...current,
+                      confirmPassword: event.target.value,
+                    }));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowProfilePassword((current) => !current)}
+                  aria-label={
+                    showProfilePassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showProfilePassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </Field>
+            <Field label="Phone">
+              <input
+                value={profileForm.phone}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    phone: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Job Title">
+              <input
+                value={profileForm.jobTitle}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    jobTitle: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Company Name">
+              <input
+                value={profileForm.companyName}
+                readOnly={isCrewUser(currentUser)}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    companyName: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Street Address">
+              <input
+                value={profileForm.streetAddress}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    streetAddress: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="City">
+              <input
+                value={profileForm.city}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    city: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="State">
+              <input
+                value={profileForm.state}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    state: event.target.value.toUpperCase(),
+                  }))
+                }
+              />
+            </Field>
+            <Field label="ZIP">
+              <input
+                value={profileForm.zip}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    zip: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Internal Notes">
+              <textarea
+                rows="4"
+                value={profileForm.internalNotes}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    internalNotes: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+          </InputRow>
+          {profilePasswordError ? (
+            <div className="inline-notice error">{profilePasswordError}</div>
+          ) : null}
+          <div className="form-actions">
+            <button className="primary-button" onClick={saveProfile}>
+              Save Profile
+            </button>
+          </div>
         </div>
       </PageSection>
       <PageSection title="Company Profile">
-        <InputRow><Field label="Company Name"><input value={companyProfileForm.companyName} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Contact Name"><input value={companyProfileForm.contactName} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone"><input value={companyProfileForm.phone} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email"><input value={companyProfileForm.email} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Address"><input value={companyProfileForm.address} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, address: event.target.value }))} /></Field><Field label="City"><input value={companyProfileForm.city} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={companyProfileForm.state} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={companyProfileForm.zip} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Billing / Remit Details"><textarea rows="4" value={companyProfileForm.billingDetails} disabled={isCrewUser(currentUser)} onChange={(event) => setCompanyProfileForm((current) => ({ ...current, billingDetails: event.target.value }))} /></Field></InputRow>
-        {isCrewUser(currentUser) ? <p className="detail-muted">Company identity fields are read-only for Crew users in this build.</p> : <div className="form-actions"><button className="primary-button" onClick={saveCompanyProfile}>Save Company Profile</button></div>}
+        <InputRow>
+          <Field label="Company Name">
+            <input
+              value={companyProfileForm.companyName}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  companyName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Contact Name">
+            <input
+              value={companyProfileForm.contactName}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  contactName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Phone">
+            <input
+              value={companyProfileForm.phone}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  phone: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Email">
+            <input
+              value={companyProfileForm.email}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Address">
+            <input
+              value={companyProfileForm.address}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  address: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="City">
+            <input
+              value={companyProfileForm.city}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  city: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="State">
+            <input
+              value={companyProfileForm.state}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  state: event.target.value.toUpperCase(),
+                }))
+              }
+            />
+          </Field>
+          <Field label="ZIP">
+            <input
+              value={companyProfileForm.zip}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  zip: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Billing / Remit Details">
+            <textarea
+              rows="4"
+              value={companyProfileForm.billingDetails}
+              disabled={isCrewUser(currentUser)}
+              onChange={(event) =>
+                setCompanyProfileForm((current) => ({
+                  ...current,
+                  billingDetails: event.target.value,
+                }))
+              }
+            />
+          </Field>
+        </InputRow>
+        {isCrewUser(currentUser) ? (
+          <p className="detail-muted">
+            Company identity fields are read-only for Crew users in this build.
+          </p>
+        ) : (
+          <div className="form-actions">
+            <button className="primary-button" onClick={saveCompanyProfile}>
+              Save Company Profile
+            </button>
+          </div>
+        )}
       </PageSection>
     </div>
   ) : null;
 
   function renderScreen() {
     if (!currentUser) return null;
-    if (currentUser.role === ROLES.OPERATOR) return <UnderConstruction title="Operator Portal" message="Operator workflow screens will be added in a later version." />;
-    if (currentUser.role === ROLES.CUSTOMER) return <UnderConstruction title="Customer Portal" message="Customer workflow screens will be added in a later version." />;
-    if (UNDER_CONSTRUCTION_SCREENS.has(activeScreen)) return <UnderConstruction title={SCREEN_LABELS[activeScreen]} message={`${SCREEN_LABELS[activeScreen]} is reserved for a future additive release.`} />;
+    if (currentUser.role === ROLES.OPERATOR)
+      return (
+        <UnderConstruction
+          title="Operator Portal"
+          message="Operator workflow screens will be added in a later version."
+        />
+      );
+    if (currentUser.role === ROLES.CUSTOMER)
+      return (
+        <UnderConstruction
+          title="Customer Portal"
+          message="Customer workflow screens will be added in a later version."
+        />
+      );
+    if (UNDER_CONSTRUCTION_SCREENS.has(activeScreen))
+      return (
+        <UnderConstruction
+          title={SCREEN_LABELS[activeScreen]}
+          message={`${SCREEN_LABELS[activeScreen]} is reserved for a future additive release.`}
+        />
+      );
     if (activeScreen === "profile") return profileScreen;
-    if (activeScreen === "myJobs") return <div className="screen-grid vendor-screen">{crewJobsSection}</div>;
+    if (activeScreen === "myJobs")
+      return <div className="screen-grid vendor-screen">{crewJobsSection}</div>;
     if (activeScreen === "completedJobs") return completedJobsScreen;
-    if (activeScreen === "mySites") return <div className="screen-grid vendor-screen">{crewSitesSection}</div>;
-    if (activeScreen === "myProposals") return <div className="screen-grid vendor-screen">{crewProposalStatusSection}</div>;
-    if (activeScreen === "myInvoices") return <div className="screen-grid vendor-screen">{crewInvoicesSection}</div>;
-    if (activeScreen === "availableWork") return <div className="screen-grid vendor-screen">{crewAvailableWorkSection}</div>;
+    if (activeScreen === "mySites")
+      return (
+        <div className="screen-grid vendor-screen">{crewSitesSection}</div>
+      );
+    if (activeScreen === "myProposals")
+      return (
+        <div className="screen-grid vendor-screen">
+          {crewProposalStatusSection}
+        </div>
+      );
+    if (activeScreen === "myInvoices")
+      return (
+        <div className="screen-grid vendor-screen">{crewInvoicesSection}</div>
+      );
+    if (activeScreen === "availableWork")
+      return (
+        <div className="screen-grid vendor-screen">
+          {crewAvailableWorkSection}
+        </div>
+      );
     if (activeScreen === "companies") return companiesScreen;
     if (activeScreen === "users") return usersScreen;
     if (activeScreen === "platformStatus") return platformStatusScreen;
@@ -5277,8 +9237,14 @@ function AppBuild03() {
     if (activeScreen === "reports") return reportsScreen;
     if (currentUser.role === ROLES.OWNER) return ownerDashboard;
     if (AMS_ROLES.includes(currentUser.role)) return amsDashboard;
-    if (isCrewUser(currentUser) && activeScreen === "dashboard") return crewDashboard;
-    return <UnderConstruction title="Screen Unavailable" message="This screen is reserved for future development." />;
+    if (isCrewUser(currentUser) && activeScreen === "dashboard")
+      return crewDashboard;
+    return (
+      <UnderConstruction
+        title="Screen Unavailable"
+        message="This screen is reserved for future development."
+      />
+    );
   }
 
   if (showSplash || authRestoring) {
@@ -5286,15 +9252,62 @@ function AppBuild03() {
   }
 
   if (!currentUser) {
-    return <LoginScreen email={loginForm.email} password={loginForm.password} onChange={updateLoginField} onLogin={() => handleLogin(loginForm.email, loginForm.password)} onDemoLogin={handleDemoLogin} loading={loginLoading} errorMessage={loginError} />;
+    return (
+      <LoginScreen
+        email={loginForm.email}
+        password={loginForm.password}
+        onChange={updateLoginField}
+        onLogin={() => handleLogin(loginForm.email, loginForm.password)}
+        onDemoLogin={handleDemoLogin}
+        loading={loginLoading}
+        errorMessage={loginError}
+      />
+    );
   }
 
   return (
     <div className="app-shell">
-      <Drawer open={drawerOpen} menuItems={DRAWER_MENUS[currentUser.role]} activeScreen={activeScreen} labels={SCREEN_LABELS} currentUser={currentUser} onNavigate={openScreen} onLogout={logout} onClose={() => setDrawerOpen(false)} />
+      <Drawer
+        open={drawerOpen}
+        menuItems={DRAWER_MENUS[currentUser.role]}
+        activeScreen={activeScreen}
+        labels={SCREEN_LABELS}
+        currentUser={currentUser}
+        onNavigate={openScreen}
+        onLogout={logout}
+        onClose={() => setDrawerOpen(false)}
+      />
       <div className="main-shell">
-        <Header currentUser={currentUser} activeScreen={activeScreen} onOpenDrawer={() => setDrawerOpen(true)} onGoBack={() => openScreen("dashboard")} onOpenNotifications={() => showPlaceholder("Notifications will be added in a later build.")} onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)} profileMenuOpen={profileMenuOpen} onNavigate={openScreen} onLogout={logout} />
-        <main className="content-shell"><div className="screen-header"><div><div className="eyebrow">{getPortalEyebrow(currentUser)}</div><h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1></div></div>{actionNotice ? <div className={`inline-notice ${actionNotice.type}`}>{actionNotice.message}</div> : null}{quickActions.length ? <TopActionBar actions={quickActions} activeKey={activeScreen} /> : null}{renderScreen()}</main>
+        <Header
+          currentUser={currentUser}
+          activeScreen={activeScreen}
+          onOpenDrawer={() => setDrawerOpen(true)}
+          onGoBack={() => openScreen("dashboard")}
+          onOpenNotifications={() =>
+            showPlaceholder("Notifications will be added in a later build.")
+          }
+          onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)}
+          profileMenuOpen={profileMenuOpen}
+          onNavigate={openScreen}
+          onLogout={logout}
+        />
+        <main className="content-shell">
+          <div className="screen-header">
+            <div>
+              <div className="eyebrow">{getPortalEyebrow(currentUser)}</div>
+              <h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1>
+            </div>
+          </div>
+          {actionNotice ? (
+            <div className={`inline-notice ${actionNotice.type}`}>
+              {actionNotice.message}
+            </div>
+          ) : null}
+          {quickActions.length ? (
+            <TopActionBar actions={quickActions} activeKey={activeScreen} />
+          ) : null}
+          {renderScreen()}
+        </main>
       </div>
 
       <Modal
@@ -5305,10 +9318,27 @@ function AppBuild03() {
         footer={
           selectedCrewOpportunity ? (
             <div className="form-actions">
-              <button className="secondary-button" onClick={() => hideCrewOpportunity(selectedCrewOpportunity.id)}>Hide Opportunity</button>
-              <button className="secondary-button" onClick={() => setSelectedCrewOpportunityId(null)}>Close</button>
-              <button className="primary-button" onClick={() => handleCrewProposalSubmit(selectedCrewOpportunity)}>
-                {selectedCrewOpportunityLatestProposal ? "Resubmit Proposal" : "Submit Proposal"}
+              <button
+                className="secondary-button"
+                onClick={() => hideCrewOpportunity(selectedCrewOpportunity.id)}
+              >
+                Hide Opportunity
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setSelectedCrewOpportunityId(null)}
+              >
+                Close
+              </button>
+              <button
+                className="primary-button"
+                onClick={() =>
+                  handleCrewProposalSubmit(selectedCrewOpportunity)
+                }
+              >
+                {selectedCrewOpportunityLatestProposal
+                  ? "Resubmit Proposal"
+                  : "Submit Proposal"}
               </button>
             </div>
           ) : null
@@ -5319,45 +9349,381 @@ function AppBuild03() {
             <div className="proposal-summary-top">
               <div>
                 <strong>{selectedCrewOpportunity.siteName}</strong>
-                <p>{selectedCrewOpportunity.serviceType || "Service type not specified"}</p>
+                <p>
+                  {selectedCrewOpportunity.serviceType ||
+                    "Service type not specified"}
+                </p>
               </div>
               <div className="proposal-summary-badges">
                 <WorkOrderStatusBadge workOrder={selectedCrewOpportunity} />
-                {selectedCrewOpportunityLatestProposal ? <ProposalStatusBadge value={selectedCrewOpportunityLatestProposal.status} /> : null}
+                {selectedCrewOpportunityLatestProposal ? (
+                  <ProposalStatusBadge
+                    value={selectedCrewOpportunityLatestProposal.status}
+                  />
+                ) : null}
               </div>
             </div>
             <div className="proposal-summary-grid">
-              <div><span className="detail-label">Site Address</span><p>{selectedCrewOpportunitySite?.address || "Not available"}</p></div>
-              <div><span className="detail-label">State</span><p>{getWorkOrderDispatchState(selectedCrewOpportunity, selectedCrewOpportunitySite) || "Unknown"}</p></div>
-              <div><span className="detail-label">Status</span><p><WorkOrderStatusBadge workOrder={selectedCrewOpportunity} /></p></div>
-              <div><span className="detail-label">Timing</span><p>{formatDate(selectedCrewOpportunity.seasonStart || selectedCrewOpportunity.proposalRequestedAt || selectedCrewOpportunity.createdAt)}</p></div>
-              <div><span className="detail-label">Photos Required</span><p>{selectedCrewOpportunity.requireBeforeAfterPhotos ? "Yes" : "No"}</p></div>
-              <div><span className="detail-label">Work Type</span><p>{getWorkTypeLabel(selectedCrewOpportunity.workType)}</p></div>
+              <div>
+                <span className="detail-label">Site Address</span>
+                <p>{selectedCrewOpportunitySite?.address || "Not available"}</p>
+              </div>
+              <div>
+                <span className="detail-label">State</span>
+                <p>
+                  {getWorkOrderDispatchState(
+                    selectedCrewOpportunity,
+                    selectedCrewOpportunitySite,
+                  ) || "Unknown"}
+                </p>
+              </div>
+              <div>
+                <span className="detail-label">Status</span>
+                <p>
+                  <WorkOrderStatusBadge workOrder={selectedCrewOpportunity} />
+                </p>
+              </div>
+              <div>
+                <span className="detail-label">Timing</span>
+                <p>
+                  {formatDate(
+                    selectedCrewOpportunity.seasonStart ||
+                      selectedCrewOpportunity.proposalRequestedAt ||
+                      selectedCrewOpportunity.createdAt,
+                  )}
+                </p>
+              </div>
+              <div>
+                <span className="detail-label">Photos Required</span>
+                <p>
+                  {selectedCrewOpportunity.requireBeforeAfterPhotos
+                    ? "Yes"
+                    : "No"}
+                </p>
+              </div>
+              <div>
+                <span className="detail-label">Work Type</span>
+                <p>{getWorkTypeLabel(selectedCrewOpportunity.workType)}</p>
+              </div>
             </div>
             <article className="detail-card">
               <span className="detail-label">Full Description</span>
-              <p>{selectedCrewOpportunity.description || "No description provided."}</p>
+              <p>
+                {selectedCrewOpportunity.description ||
+                  "No description provided."}
+              </p>
             </article>
             <article className="detail-card">
               <span className="detail-label">Service Requirements</span>
-              <p>{selectedCrewOpportunity.recurringPricingNotes || selectedCrewOpportunitySite?.internalNotes || "No additional service requirements provided."}</p>
+              <p>
+                {selectedCrewOpportunity.recurringPricingNotes ||
+                  selectedCrewOpportunitySite?.internalNotes ||
+                  "No additional service requirements provided."}
+              </p>
             </article>
             <InputRow>
               <Field label="Required Cost">
-                <input value={selectedCrewOpportunityDraft.submittedPrice} onChange={(event) => updateVendorProposalDraft(selectedCrewOpportunity.id, "submittedPrice", event.target.value)} placeholder="Enter crew cost" required />
+                <input
+                  value={selectedCrewOpportunityDraft.submittedPrice}
+                  onChange={(event) =>
+                    updateVendorProposalDraft(
+                      selectedCrewOpportunity.id,
+                      "submittedPrice",
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Enter crew cost"
+                  required
+                />
               </Field>
               <Field label="Proposal Notes">
-                <textarea rows="4" value={selectedCrewOpportunityDraft.submittedNotes} onChange={(event) => updateVendorProposalDraft(selectedCrewOpportunity.id, "submittedNotes", event.target.value)} placeholder="Add scope notes or crew comments" />
+                <textarea
+                  rows="4"
+                  value={selectedCrewOpportunityDraft.submittedNotes}
+                  onChange={(event) =>
+                    updateVendorProposalDraft(
+                      selectedCrewOpportunity.id,
+                      "submittedNotes",
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Add scope notes or crew comments"
+                />
               </Field>
             </InputRow>
           </div>
         ) : null}
       </Modal>
 
-        <Modal open={activeModal === "workOrder"} title="Create Work Order" onClose={closeModal} footer={<div className="form-actions"><button className="secondary-button" onClick={() => showPlaceholder("File and image uploads require backend support and will be added in a later build.")}>Attach File / Upload Picture</button><button className="primary-button" onClick={createWorkOrder}>Create Work Order</button></div>}>
-          <div className="modal-reference">AMS Work Order Number: {nextWorkOrderNumber}</div>
-          <InputRow>{showExternalWorkOrder ? <Field label="External Work Order Number"><input value={workOrderForm.externalWorkOrderNumber} onChange={(event) => setWorkOrderForm((current) => ({ ...current, externalWorkOrderNumber: event.target.value }))} /></Field> : null}<Field label="Site"><select value={workOrderForm.siteId} onChange={(event) => setWorkOrderForm((current) => ({ ...current, siteId: event.target.value }))}><option value="">Select site</option>{appState.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field><Field label="Service Type"><select value={workOrderForm.serviceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Workflow Path"><select value={workOrderForm.workflowType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workflowType: event.target.value, directVendorId: event.target.value === "proposal" ? "" : current.directVendorId }))}><option value="direct">Direct Assignment</option><option value="proposal">Proposal Opportunity</option></select></Field><Field label="Work Type"><select value={workOrderForm.workType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, workType: event.target.value, recurringFrequency: event.target.value === "recurring" ? current.recurringFrequency : "", recurringVendorCost: event.target.value === "recurring" ? current.recurringVendorCost : "", recurringPricingNotes: event.target.value === "recurring" ? current.recurringPricingNotes : "", seasonStart: event.target.value === "seasonal" ? current.seasonStart : "", seasonEnd: event.target.value === "seasonal" ? current.seasonEnd : "", seasonalServiceType: event.target.value === "seasonal" ? current.seasonalServiceType : "" }))}><option value="one_time">One-Time</option><option value="recurring">Recurring</option><option value="seasonal">Seasonal/Triggered</option></select></Field><Field label="Assign Vendor Now"><select value={workOrderForm.directVendorId} disabled={workOrderForm.workflowType !== "direct"} onChange={(event) => setWorkOrderForm((current) => ({ ...current, directVendorId: event.target.value }))}><option value="">Leave unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field>{workOrderForm.workflowType === "direct" && workOrderForm.workType !== "recurring" ? <Field label="Vendor Cost"><input value={workOrderForm.vendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, vendorCost: event.target.value }))} placeholder="Enter vendor cost" /></Field> : null}<Field label="Description"><textarea rows="4" value={workOrderForm.description} onChange={(event) => setWorkOrderForm((current) => ({ ...current, description: event.target.value }))} /></Field>{workOrderForm.workType === "recurring" ? <><Field label="Recurring Frequency"><select value={workOrderForm.recurringFrequency} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringFrequency: event.target.value }))}><option value="">Select frequency</option><option value="weekly">Weekly</option><option value="bi_weekly">Bi-weekly</option><option value="monthly">Monthly</option></select></Field><Field label="Vendor Cost"><input value={workOrderForm.recurringVendorCost} onChange={(event) => setWorkOrderForm((current) => ({ ...current, recurringVendorCost: event.target.value, vendorCost: event.target.value }))} placeholder="Enter recurring vendor cost" /></Field></> : null}{workOrderForm.workType === "seasonal" ? <><Field label="Season Start"><input type="date" value={workOrderForm.seasonStart} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonStart: event.target.value }))} /></Field><Field label="Season End"><input type="date" value={workOrderForm.seasonEnd} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonEnd: event.target.value }))} /></Field><Field label="Seasonal Service"><select value={workOrderForm.seasonalServiceType} onChange={(event) => setWorkOrderForm((current) => ({ ...current, seasonalServiceType: event.target.value }))}><option value="">Select service</option><option value="Plowing">Plowing</option><option value="Shoveling">Shoveling</option><option value="Salting">Salting</option></select></Field></> : null}</InputRow>
-        <label className="checkbox-inline"><input type="checkbox" checked={workOrderForm.requireBeforeAfterPhotos} onChange={(event) => setWorkOrderForm((current) => ({ ...current, requireBeforeAfterPhotos: event.target.checked }))} />Require before and after photos</label>
+      <Modal
+        open={activeModal === "workOrder"}
+        title="Create Work Order"
+        onClose={closeModal}
+        footer={
+          <div className="form-actions">
+            <button
+              className="secondary-button"
+              onClick={() =>
+                showPlaceholder(
+                  "File and image uploads require backend support and will be added in a later build.",
+                )
+              }
+            >
+              Attach File / Upload Picture
+            </button>
+            <button className="primary-button" onClick={createWorkOrder}>
+              Create Work Order
+            </button>
+          </div>
+        }
+      >
+        <div className="modal-reference">
+          AMS Work Order Number: {nextWorkOrderNumber}
+        </div>
+        <InputRow>
+          {showExternalWorkOrder ? (
+            <Field label="External Work Order Number">
+              <input
+                value={workOrderForm.externalWorkOrderNumber}
+                onChange={(event) =>
+                  setWorkOrderForm((current) => ({
+                    ...current,
+                    externalWorkOrderNumber: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+          ) : null}
+          <Field label="Site">
+            <select
+              value={workOrderForm.siteId}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  siteId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select site</option>
+              {appState.sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Service Type">
+            <select
+              value={workOrderForm.serviceType}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  serviceType: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select service type</option>
+              {SERVICE_TYPES.map((serviceType) => (
+                <option key={serviceType} value={serviceType}>
+                  {serviceType}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Workflow Path">
+            <select
+              value={workOrderForm.workflowType}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  workflowType: event.target.value,
+                  directVendorId:
+                    event.target.value === "proposal"
+                      ? ""
+                      : current.directVendorId,
+                }))
+              }
+            >
+              <option value="direct">Direct Assignment</option>
+              <option value="proposal">Proposal Opportunity</option>
+            </select>
+          </Field>
+          <Field label="Work Type">
+            <select
+              value={workOrderForm.workType}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  workType: event.target.value,
+                  recurringFrequency:
+                    event.target.value === "recurring"
+                      ? current.recurringFrequency
+                      : "",
+                  recurringVendorCost:
+                    event.target.value === "recurring"
+                      ? current.recurringVendorCost
+                      : "",
+                  recurringPricingNotes:
+                    event.target.value === "recurring"
+                      ? current.recurringPricingNotes
+                      : "",
+                  seasonStart:
+                    event.target.value === "seasonal"
+                      ? current.seasonStart
+                      : "",
+                  seasonEnd:
+                    event.target.value === "seasonal" ? current.seasonEnd : "",
+                  seasonalServiceType:
+                    event.target.value === "seasonal"
+                      ? current.seasonalServiceType
+                      : "",
+                }))
+              }
+            >
+              <option value="one_time">One-Time</option>
+              <option value="recurring">Recurring</option>
+              <option value="seasonal">Seasonal/Triggered</option>
+            </select>
+          </Field>
+          <Field label="Assign Vendor Now">
+            <select
+              value={workOrderForm.directVendorId}
+              disabled={workOrderForm.workflowType !== "direct"}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  directVendorId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Leave unassigned</option>
+              {normalizedVendors
+                .filter((vendor) => vendor.active)
+                .map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.companyName || vendor.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          {workOrderForm.workflowType === "direct" &&
+          workOrderForm.workType !== "recurring" ? (
+            <Field label="Vendor Cost">
+              <input
+                value={workOrderForm.vendorCost}
+                onChange={(event) =>
+                  setWorkOrderForm((current) => ({
+                    ...current,
+                    vendorCost: event.target.value,
+                  }))
+                }
+                placeholder="Enter vendor cost"
+              />
+            </Field>
+          ) : null}
+          <Field label="Description">
+            <textarea
+              rows="4"
+              value={workOrderForm.description}
+              onChange={(event) =>
+                setWorkOrderForm((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          {workOrderForm.workType === "recurring" ? (
+            <>
+              <Field label="Recurring Frequency">
+                <select
+                  value={workOrderForm.recurringFrequency}
+                  onChange={(event) =>
+                    setWorkOrderForm((current) => ({
+                      ...current,
+                      recurringFrequency: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select frequency</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="bi_weekly">Bi-weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </Field>
+              <Field label="Vendor Cost">
+                <input
+                  value={workOrderForm.recurringVendorCost}
+                  onChange={(event) =>
+                    setWorkOrderForm((current) => ({
+                      ...current,
+                      recurringVendorCost: event.target.value,
+                      vendorCost: event.target.value,
+                    }))
+                  }
+                  placeholder="Enter recurring vendor cost"
+                />
+              </Field>
+            </>
+          ) : null}
+          {workOrderForm.workType === "seasonal" ? (
+            <>
+              <Field label="Season Start">
+                <input
+                  type="date"
+                  value={workOrderForm.seasonStart}
+                  onChange={(event) =>
+                    setWorkOrderForm((current) => ({
+                      ...current,
+                      seasonStart: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="Season End">
+                <input
+                  type="date"
+                  value={workOrderForm.seasonEnd}
+                  onChange={(event) =>
+                    setWorkOrderForm((current) => ({
+                      ...current,
+                      seasonEnd: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="Seasonal Service">
+                <select
+                  value={workOrderForm.seasonalServiceType}
+                  onChange={(event) =>
+                    setWorkOrderForm((current) => ({
+                      ...current,
+                      seasonalServiceType: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select service</option>
+                  <option value="Plowing">Plowing</option>
+                  <option value="Shoveling">Shoveling</option>
+                  <option value="Salting">Salting</option>
+                </select>
+              </Field>
+            </>
+          ) : null}
+        </InputRow>
+        <label className="checkbox-inline">
+          <input
+            type="checkbox"
+            checked={workOrderForm.requireBeforeAfterPhotos}
+            onChange={(event) =>
+              setWorkOrderForm((current) => ({
+                ...current,
+                requireBeforeAfterPhotos: event.target.checked,
+              }))
+            }
+          />
+          Require before and after photos
+        </label>
       </Modal>
 
       <Modal
@@ -5379,8 +9745,14 @@ function AppBuild03() {
             >
               Cancel
             </button>
-            <button className="primary-button" onClick={confirmSiteImport} disabled={!canConfirmSiteImport}>
-              {siteImportLoading ? "Importing..." : `Import ${siteImportValidCount || ""} Sites`}
+            <button
+              className="primary-button"
+              onClick={confirmSiteImport}
+              disabled={!canConfirmSiteImport}
+            >
+              {siteImportLoading
+                ? "Importing..."
+                : `Import ${siteImportValidCount || ""} Sites`}
             </button>
           </div>
         }
@@ -5389,25 +9761,68 @@ function AppBuild03() {
           <div className="detail-card">
             <span className="detail-label">AMS Site Template</span>
             <p className="detail-muted">
-              Upload a .xlsx or .csv file with exactly these headers: {SITE_IMPORT_HEADERS.join(", ")}.
+              Upload a .xlsx or .csv file with exactly these headers:{" "}
+              {SITE_IMPORT_HEADERS.join(", ")}.
             </p>
-            <input type="file" accept=".xlsx,.csv" onChange={handleSiteImportFile} disabled={siteImportLoading} />
-            {siteImportFileName ? <p className="detail-muted">Selected file: {siteImportFileName}</p> : null}
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              onChange={handleSiteImportFile}
+              disabled={siteImportLoading}
+            />
+            {siteImportFileName ? (
+              <p className="detail-muted">
+                Selected file: {siteImportFileName}
+              </p>
+            ) : null}
           </div>
-          {siteImportError ? <div className="inline-notice error">{siteImportError}</div> : null}
-          {siteImportSummary ? <div className="inline-notice info">{siteImportSummary}</div> : null}
+          {siteImportError ? (
+            <div className="inline-notice error">{siteImportError}</div>
+          ) : null}
+          {siteImportSummary ? (
+            <div className="inline-notice info">{siteImportSummary}</div>
+          ) : null}
           {siteImportRows.length ? (
             <div className="list-scroll compact-scroll contained-scroll site-import-preview">
               <DataTable
                 columns={[
                   { key: "row", label: "Row", render: (row) => row.rowNumber },
-                  { key: "valid", label: "Status", render: (row) => (row.valid ? "Ready" : "Needs Fix") },
-                  { key: "siteNumber", label: "Site #", render: (row) => row.site.siteNumber },
-                  { key: "name", label: "Name", render: (row) => row.site.name },
-                  { key: "client", label: "Client", render: (row) => row.site.client },
-                  { key: "address", label: "Address", render: (row) => `${row.site.address}, ${row.site.city}, ${row.site.state} ${row.site.zip}` },
-                  { key: "services", label: "Services", render: (row) => row.site.serviceTypes.join(", ") },
-                  { key: "errors", label: "Validation", render: (row) => row.errors.join("; ") || "OK" },
+                  {
+                    key: "valid",
+                    label: "Status",
+                    render: (row) => (row.valid ? "Ready" : "Needs Fix"),
+                  },
+                  {
+                    key: "siteNumber",
+                    label: "Site #",
+                    render: (row) => row.site.siteNumber,
+                  },
+                  {
+                    key: "name",
+                    label: "Name",
+                    render: (row) => row.site.name,
+                  },
+                  {
+                    key: "client",
+                    label: "Client",
+                    render: (row) => row.site.client,
+                  },
+                  {
+                    key: "address",
+                    label: "Address",
+                    render: (row) =>
+                      `${row.site.address}, ${row.site.city}, ${row.site.state} ${row.site.zip}`,
+                  },
+                  {
+                    key: "services",
+                    label: "Services",
+                    render: (row) => row.site.serviceTypes.join(", "),
+                  },
+                  {
+                    key: "errors",
+                    label: "Validation",
+                    render: (row) => row.errors.join("; ") || "OK",
+                  },
                 ]}
                 rows={siteImportRows}
                 emptyTitle="No rows previewed"
@@ -5416,26 +9831,640 @@ function AppBuild03() {
             </div>
           ) : null}
           {siteImportInvalidCount ? (
-            <p className="detail-muted">Import is blocked until invalid rows are corrected and the file is uploaded again.</p>
+            <p className="detail-muted">
+              Import is blocked until invalid rows are corrected and the file is
+              uploaded again.
+            </p>
           ) : null}
         </div>
       </Modal>
 
-      <Modal open={activeModal === "site"} title={editingSiteId ? "Edit Site" : "Create Site"} onClose={closeModal} footer={<button className="primary-button" onClick={saveSite}>{editingSiteId ? "Update Site" : "Add Site"}</button>}><InputRow><Field label="Site Name"><input value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Street Address"><input value={siteForm.streetAddress} onChange={(event) => setSiteForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={siteForm.city} onChange={(event) => setSiteForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={siteForm.state} maxLength={2} onChange={(event) => setSiteForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={siteForm.zip} onChange={(event) => setSiteForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Primary Assigned Vendor"><select value={siteForm.assignedVendorId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedVendorId: event.target.value, assignedCrewContactId: "" }))}><option value="">Unassigned</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Crew Contact"><select value={siteForm.assignedCrewContactId} onChange={(event) => setSiteForm((current) => ({ ...current, assignedCrewContactId: event.target.value }))}><option value="">Not set</option>{appState.users.filter((user) => user.role === ROLES.CREW && (!siteForm.assignedVendorId || normalizedVendors.find((vendor) => vendor.id === siteForm.assignedVendorId)?.userId === user.id)).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></Field><Field label="Internal Notes"><textarea rows="4" value={siteForm.internalNotes} onChange={(event) => setSiteForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow><div className="proposal-summary-grid"><article className="detail-card"><span className="detail-label">Site Map</span><p>Upload Coming Soon</p></article><article className="detail-card"><span className="detail-label">Geo Fence</span><p>Geo Fence Setup Coming Soon</p></article></div></Modal>
+      <Modal
+        open={activeModal === "site"}
+        title={editingSiteId ? "Edit Site" : "Create Site"}
+        onClose={closeModal}
+        footer={
+          <button className="primary-button" onClick={saveSite}>
+            {editingSiteId ? "Update Site" : "Add Site"}
+          </button>
+        }
+      >
+        <InputRow>
+          <Field label="Site Name">
+            <input
+              value={siteForm.name}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Street Address">
+            <input
+              value={siteForm.streetAddress}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  streetAddress: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="City">
+            <input
+              value={siteForm.city}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  city: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="State">
+            <input
+              value={siteForm.state}
+              maxLength={2}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  state: event.target.value.toUpperCase(),
+                }))
+              }
+            />
+          </Field>
+          <Field label="ZIP Code">
+            <input
+              value={siteForm.zip}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  zip: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Primary Assigned Vendor">
+            <select
+              value={siteForm.assignedVendorId}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  assignedVendorId: event.target.value,
+                  assignedCrewContactId: "",
+                }))
+              }
+            >
+              <option value="">Unassigned</option>
+              {normalizedVendors
+                .filter((vendor) => vendor.active)
+                .map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.companyName || vendor.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Crew Contact">
+            <select
+              value={siteForm.assignedCrewContactId}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  assignedCrewContactId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Not set</option>
+              {appState.users
+                .filter(
+                  (user) =>
+                    user.role === ROLES.CREW &&
+                    (!siteForm.assignedVendorId ||
+                      normalizedVendors.find(
+                        (vendor) => vendor.id === siteForm.assignedVendorId,
+                      )?.userId === user.id),
+                )
+                .map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Internal Notes">
+            <textarea
+              rows="4"
+              value={siteForm.internalNotes}
+              onChange={(event) =>
+                setSiteForm((current) => ({
+                  ...current,
+                  internalNotes: event.target.value,
+                }))
+              }
+            />
+          </Field>
+        </InputRow>
+        <div className="proposal-summary-grid">
+          <article className="detail-card">
+            <span className="detail-label">Site Map</span>
+            <p>Upload Coming Soon</p>
+          </article>
+          <article className="detail-card">
+            <span className="detail-label">Geo Fence</span>
+            <p>Geo Fence Setup Coming Soon</p>
+          </article>
+        </div>
+      </Modal>
 
-      <Modal open={activeModal === "vendor"} title={editingVendorId ? "Edit Vendor" : "Create Vendor"} onClose={closeModal} footer={<button className="primary-button" onClick={saveVendor}>{editingVendorId ? "Update Vendor" : "Add Vendor"}</button>}><InputRow><Field label="Company Name"><input value={vendorForm.companyName} onChange={(event) => setVendorForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Point of Contact"><input value={vendorForm.contactName} onChange={(event) => setVendorForm((current) => ({ ...current, contactName: event.target.value }))} /></Field><Field label="Phone Number"><input value={vendorForm.phone} onChange={(event) => setVendorForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Email Address"><input value={vendorForm.email} onChange={(event) => setVendorForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={vendorForm.password} onChange={(event) => setVendorForm((current) => ({ ...current, password: event.target.value }))} placeholder="Defaults to Crew123 if left blank" /></Field><Field label="Street Address"><input value={vendorForm.streetAddress} onChange={(event) => setVendorForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={vendorForm.city} onChange={(event) => setVendorForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={vendorForm.state} onChange={(event) => setVendorForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP Code"><input value={vendorForm.zip} onChange={(event) => setVendorForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Primary Service Type"><select value={vendorForm.serviceType} onChange={(event) => setVendorForm((current) => ({ ...current, serviceType: event.target.value }))}><option value="">Select service type</option>{SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}</select></Field><Field label="Service Types"><input value={vendorForm.serviceTypes} onChange={(event) => setVendorForm((current) => ({ ...current, serviceTypes: event.target.value }))} placeholder="Snow Removal, Landscaping" /></Field><Field label="States"><input value={vendorForm.states} onChange={(event) => setVendorForm((current) => ({ ...current, states: event.target.value.toUpperCase() }))} placeholder="MA, RI" /></Field><Field label="Internal Notes"><textarea rows="4" value={vendorForm.internalNotes} onChange={(event) => setVendorForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field></InputRow></Modal>
+      <Modal
+        open={activeModal === "vendor"}
+        title={editingVendorId ? "Edit Vendor" : "Create Vendor"}
+        onClose={closeModal}
+        footer={
+          <button className="primary-button" onClick={saveVendor}>
+            {editingVendorId ? "Update Vendor" : "Add Vendor"}
+          </button>
+        }
+      >
+        <InputRow>
+          <Field label="Company Name">
+            <input
+              value={vendorForm.companyName}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  companyName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Point of Contact">
+            <input
+              value={vendorForm.contactName}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  contactName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Phone Number">
+            <input
+              value={vendorForm.phone}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  phone: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Email Address">
+            <input
+              value={vendorForm.email}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              value={vendorForm.password}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+              placeholder="Defaults to Crew123 if left blank"
+            />
+          </Field>
+          <Field label="Street Address">
+            <input
+              value={vendorForm.streetAddress}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  streetAddress: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="City">
+            <input
+              value={vendorForm.city}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  city: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="State">
+            <input
+              value={vendorForm.state}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  state: event.target.value.toUpperCase(),
+                }))
+              }
+            />
+          </Field>
+          <Field label="ZIP Code">
+            <input
+              value={vendorForm.zip}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  zip: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Primary Service Type">
+            <select
+              value={vendorForm.serviceType}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  serviceType: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select service type</option>
+              {SERVICE_TYPES.map((serviceType) => (
+                <option key={serviceType} value={serviceType}>
+                  {serviceType}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Service Types">
+            <input
+              value={vendorForm.serviceTypes}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  serviceTypes: event.target.value,
+                }))
+              }
+              placeholder="Snow Removal, Landscaping"
+            />
+          </Field>
+          <Field label="States">
+            <input
+              value={vendorForm.states}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  states: event.target.value.toUpperCase(),
+                }))
+              }
+              placeholder="MA, RI"
+            />
+          </Field>
+          <Field label="Internal Notes">
+            <textarea
+              rows="4"
+              value={vendorForm.internalNotes}
+              onChange={(event) =>
+                setVendorForm((current) => ({
+                  ...current,
+                  internalNotes: event.target.value,
+                }))
+              }
+            />
+          </Field>
+        </InputRow>
+      </Modal>
 
-      <Modal open={activeModal === "job"} title="Create Job" onClose={closeModal} footer={<button className="primary-button" onClick={createManualJob}>Create Job</button>}><InputRow><Field label="Work Order"><select value={jobCreateForm.workOrderId} onChange={(event) => { const nextWorkOrder = appState.workOrders.find((workOrder) => workOrder.id === event.target.value); setJobCreateForm((current) => ({ ...current, workOrderId: event.target.value, vendorId: nextWorkOrder?.assignedVendorId || current.vendorId })); }}><option value="">Select work order</option>{appState.workOrders.filter((workOrder) => !appState.jobs.some((job) => job.workOrderId === workOrder.id)).map((workOrder) => <option key={workOrder.id} value={workOrder.id}>{workOrder.amsWorkOrderNumber} - {workOrder.siteName}</option>)}</select></Field><Field label="Vendor"><select value={jobCreateForm.vendorId} onChange={(event) => setJobCreateForm((current) => ({ ...current, vendorId: event.target.value }))}><option value="">Select vendor</option>{normalizedVendors.filter((vendor) => vendor.active).map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.companyName || vendor.name}</option>)}</select></Field><Field label="Price"><input value={jobCreateForm.price} onChange={(event) => setJobCreateForm((current) => ({ ...current, price: event.target.value }))} /></Field></InputRow></Modal>
-      <Modal open={activeModal === "amsTeammate"} title="Add AMS Teammate" onClose={closeModal} footer={<button className="primary-button" onClick={saveUser}>Add Teammate</button>}><InputRow><Field label="Full Name"><input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email / Login"><input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Password"><input type="password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field label="Phone Number"><input value={userForm.phone} onChange={(event) => setUserForm((current) => ({ ...current, phone: event.target.value }))} /></Field><Field label="Job Title"><input value={userForm.jobTitle} onChange={(event) => setUserForm((current) => ({ ...current, jobTitle: event.target.value }))} /></Field><Field label="Company Name"><input value={userForm.companyName} onChange={(event) => setUserForm((current) => ({ ...current, companyName: event.target.value }))} /></Field><Field label="Street Address"><input value={userForm.streetAddress} onChange={(event) => setUserForm((current) => ({ ...current, streetAddress: event.target.value }))} /></Field><Field label="City"><input value={userForm.city} onChange={(event) => setUserForm((current) => ({ ...current, city: event.target.value }))} /></Field><Field label="State"><input value={userForm.state} onChange={(event) => setUserForm((current) => ({ ...current, state: event.target.value.toUpperCase() }))} /></Field><Field label="ZIP"><input value={userForm.zip} onChange={(event) => setUserForm((current) => ({ ...current, zip: event.target.value }))} /></Field><Field label="Internal Notes"><textarea rows="4" value={userForm.internalNotes} onChange={(event) => setUserForm((current) => ({ ...current, internalNotes: event.target.value }))} /></Field><Field label="Role"><select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value }))}><option value={ROLES.AMS_ADMIN}>{ROLES.AMS_ADMIN}</option><option value={ROLES.AMS_MANAGER}>{ROLES.AMS_MANAGER}</option></select></Field></InputRow></Modal>
-      <Modal open={activeModal === "teamProfile"} title="AMS Teammate Profile" onClose={closeModal}>{selectedTeamMember ? <div className="detail-stack"><div className="detail-card"><div className="proposal-summary-top"><div><strong>{selectedTeamMember.name}</strong><p>{selectedTeamMember.jobTitle || selectedTeamMember.role}</p></div><StatusBadge value={selectedTeamMember.active ? "active" : "inactive"} label={selectedTeamMember.active ? "Active" : "Inactive"} /></div><div className="proposal-summary-grid"><div><span className="detail-label">Phone Number</span><p>{selectedTeamMember.phone ? <a href={`tel:${selectedTeamMember.phone}`}>{selectedTeamMember.phone}</a> : "Not set"}</p></div><div><span className="detail-label">Email</span><p><a href={`mailto:${selectedTeamMember.email}`}>{selectedTeamMember.email}</a></p></div><div><span className="detail-label">Company Name</span><p>{selectedTeamMember.companyName || "Advanced Maintenance Services"}</p></div><div><span className="detail-label">Address</span><p>{selectedTeamMember.address || "Not set"}</p></div><div><span className="detail-label">Internal Notes</span><p>{selectedTeamMember.internalNotes || "No internal notes."}</p></div></div></div></div> : <EmptyState title="No teammate selected" text="Choose a teammate from the directory." />}</Modal>
-      <Modal open={Boolean(jobConfirmation)} title={jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"} onClose={() => setJobConfirmation(null)} footer={<div className="form-actions"><button className="secondary-button" onClick={() => setJobConfirmation(null)}>Cancel</button><button className="primary-button" onClick={confirmJobStatusChange}>{jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"}</button></div>}><p className="detail-muted">{jobConfirmation?.type === "start" ? "Are you on site and ready to start the job?" : "Are you sure this job is complete and the scope of work has been completed?"}</p></Modal>
+      <Modal
+        open={activeModal === "job"}
+        title="Create Job"
+        onClose={closeModal}
+        footer={
+          <button className="primary-button" onClick={createManualJob}>
+            Create Job
+          </button>
+        }
+      >
+        <InputRow>
+          <Field label="Work Order">
+            <select
+              value={jobCreateForm.workOrderId}
+              onChange={(event) => {
+                const nextWorkOrder = appState.workOrders.find(
+                  (workOrder) => workOrder.id === event.target.value,
+                );
+                setJobCreateForm((current) => ({
+                  ...current,
+                  workOrderId: event.target.value,
+                  vendorId: nextWorkOrder?.assignedVendorId || current.vendorId,
+                }));
+              }}
+            >
+              <option value="">Select work order</option>
+              {appState.workOrders
+                .filter(
+                  (workOrder) =>
+                    !appState.jobs.some(
+                      (job) => job.workOrderId === workOrder.id,
+                    ),
+                )
+                .map((workOrder) => (
+                  <option key={workOrder.id} value={workOrder.id}>
+                    {workOrder.amsWorkOrderNumber} - {workOrder.siteName}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Vendor">
+            <select
+              value={jobCreateForm.vendorId}
+              onChange={(event) =>
+                setJobCreateForm((current) => ({
+                  ...current,
+                  vendorId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select vendor</option>
+              {normalizedVendors
+                .filter((vendor) => vendor.active)
+                .map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.companyName || vendor.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Price">
+            <input
+              value={jobCreateForm.price}
+              onChange={(event) =>
+                setJobCreateForm((current) => ({
+                  ...current,
+                  price: event.target.value,
+                }))
+              }
+            />
+          </Field>
+        </InputRow>
+      </Modal>
+      <Modal
+        open={activeModal === "amsTeammate"}
+        title="Add AMS Teammate"
+        onClose={closeModal}
+        footer={
+          <button className="primary-button" onClick={saveUser}>
+            Add Teammate
+          </button>
+        }
+      >
+        <InputRow>
+          <Field label="Full Name">
+            <input
+              value={userForm.name}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Email / Login">
+            <input
+              value={userForm.email}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              value={userForm.password}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Phone Number">
+            <input
+              value={userForm.phone}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  phone: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Job Title">
+            <input
+              value={userForm.jobTitle}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  jobTitle: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Company Name">
+            <input
+              value={userForm.companyName}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  companyName: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Street Address">
+            <input
+              value={userForm.streetAddress}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  streetAddress: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="City">
+            <input
+              value={userForm.city}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  city: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="State">
+            <input
+              value={userForm.state}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  state: event.target.value.toUpperCase(),
+                }))
+              }
+            />
+          </Field>
+          <Field label="ZIP">
+            <input
+              value={userForm.zip}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  zip: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Internal Notes">
+            <textarea
+              rows="4"
+              value={userForm.internalNotes}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  internalNotes: event.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={userForm.role}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  role: event.target.value,
+                }))
+              }
+            >
+              <option value={ROLES.AMS_ADMIN}>{ROLES.AMS_ADMIN}</option>
+              <option value={ROLES.AMS_MANAGER}>{ROLES.AMS_MANAGER}</option>
+            </select>
+          </Field>
+        </InputRow>
+      </Modal>
+      <Modal
+        open={activeModal === "teamProfile"}
+        title="AMS Teammate Profile"
+        onClose={closeModal}
+      >
+        {selectedTeamMember ? (
+          <div className="detail-stack">
+            <div className="detail-card">
+              <div className="proposal-summary-top">
+                <div>
+                  <strong>{selectedTeamMember.name}</strong>
+                  <p>
+                    {selectedTeamMember.jobTitle || selectedTeamMember.role}
+                  </p>
+                </div>
+                <StatusBadge
+                  value={selectedTeamMember.active ? "active" : "inactive"}
+                  label={selectedTeamMember.active ? "Active" : "Inactive"}
+                />
+              </div>
+              <div className="proposal-summary-grid">
+                <div>
+                  <span className="detail-label">Phone Number</span>
+                  <p>
+                    {selectedTeamMember.phone ? (
+                      <a href={`tel:${selectedTeamMember.phone}`}>
+                        {selectedTeamMember.phone}
+                      </a>
+                    ) : (
+                      "Not set"
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <span className="detail-label">Email</span>
+                  <p>
+                    <a href={`mailto:${selectedTeamMember.email}`}>
+                      {selectedTeamMember.email}
+                    </a>
+                  </p>
+                </div>
+                <div>
+                  <span className="detail-label">Company Name</span>
+                  <p>
+                    {selectedTeamMember.companyName ||
+                      "Advanced Maintenance Services"}
+                  </p>
+                </div>
+                <div>
+                  <span className="detail-label">Address</span>
+                  <p>{selectedTeamMember.address || "Not set"}</p>
+                </div>
+                <div>
+                  <span className="detail-label">Internal Notes</span>
+                  <p>
+                    {selectedTeamMember.internalNotes || "No internal notes."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <EmptyState
+            title="No teammate selected"
+            text="Choose a teammate from the directory."
+          />
+        )}
+      </Modal>
+      <Modal
+        open={Boolean(jobConfirmation)}
+        title={jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"}
+        onClose={() => setJobConfirmation(null)}
+        footer={
+          <div className="form-actions">
+            <button
+              className="secondary-button"
+              onClick={() => setJobConfirmation(null)}
+            >
+              Cancel
+            </button>
+            <button className="primary-button" onClick={confirmJobStatusChange}>
+              {jobConfirmation?.type === "start" ? "Start Job" : "Complete Job"}
+            </button>
+          </div>
+        }
+      >
+        <p className="detail-muted">
+          {jobConfirmation?.type === "start"
+            ? "Are you on site and ready to start the job?"
+            : "Are you sure this job is complete and the scope of work has been completed?"}
+        </p>
+      </Modal>
     </div>
   );
 }
 
 export default AppBuild03;
-
-
-
-
-
