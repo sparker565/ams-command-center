@@ -86,6 +86,13 @@ import {
 } from "./firestoreWorkOrders";
 import { parseSiteImportFile, SITE_IMPORT_HEADERS } from "./siteImport";
 
+const DISPLAY_SCREEN_LABELS = {
+  ...SCREEN_LABELS,
+  amsTeam: "Operations Team",
+  customer: "Client Portal",
+  operatorPortal: "Operations Portal",
+};
+
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
@@ -269,7 +276,7 @@ function normalizeUser(user) {
   const hasBadDefaultAmsAddress =
     user.streetAddress === "19B North Street" &&
     [
-      "Advanced Maintenance Services",
+      "Spark Command Systems",
       "SparkCommand Systems",
       "AMS Demo Crew Company",
     ].includes(user.companyName || "");
@@ -461,6 +468,12 @@ function getNextAmsWorkOrderNumber(workOrders) {
   }, 0);
 
   return `AMS-WO-${String(highest + 1).padStart(4, "0")}`;
+}
+
+function formatInternalWorkOrderNumber(value, fallback = "Not available") {
+  const reference = String(value || "").trim();
+  if (!reference) return fallback;
+  return reference.replace(/^AMS-WO-/i, "WO-");
 }
 
 function normalizeWorkOrder(workOrder, proposals, jobs) {
@@ -726,14 +739,14 @@ function createDemoSessionUser(type) {
   if (type === "ams") {
     return normalizeUser({
       id: "demo-ams-session",
-      name: "AMS Demo",
+      name: "Spark Demo",
       email: "amsdemo@amsdemo.local",
       role: ROLES.AMS_ADMIN,
-      displayRole: "AMS Admin",
+      displayRole: "Platform Admin",
       active: true,
       accessStatus: "Active",
       authStatus: "Demo",
-      companyName: "Advanced Maintenance Services",
+      companyName: "Spark Command Systems",
       demo: true,
     });
   }
@@ -981,9 +994,9 @@ function getPortalPathForUser(user) {
 }
 
 function getPortalEyebrow(user) {
-  if (user?.role === ROLES.OWNER) return "SparkCommand Systems";
+  if (user?.role === ROLES.OWNER) return "Spark Command Systems";
   if (AMS_ROLES.includes(user?.role))
-    return `AMS Portal • Version ${APP_VERSION}`;
+    return `Operations Portal • Version ${APP_VERSION}`;
   if (isCrewUser(user)) return `Crew Portal • Version ${APP_VERSION}`;
   return `Version ${APP_VERSION}`;
 }
@@ -1035,7 +1048,7 @@ function buildUserFromFirestoreProfile(profile, authUser, state) {
       existingUser?.companyName ||
       (role === ROLES.VENDOR
         ? "Crew Company"
-        : "Advanced Maintenance Services"),
+        : "Spark Command Systems"),
     portal:
       profile?.portal || existingUser?.portal || getPortalPathForUser({ role }),
     defaultPortal:
@@ -1144,7 +1157,10 @@ function buildInvoiceDownloadMarkup(
   workOrder,
   currentUser,
 ) {
-  const amsWorkOrderNumber = workOrder?.amsWorkOrderNumber || "N/A";
+  const amsWorkOrderNumber = formatInternalWorkOrderNumber(
+    workOrder?.amsWorkOrderNumber,
+    "N/A",
+  );
   const externalWorkOrderNumber = workOrder?.externalWorkOrderNumber || "N/A";
   const externalWorkOrderMarkup = canViewExternalWorkOrder(currentUser)
     ? `<p class="meta"><strong>External Work Order Number:</strong> ${externalWorkOrderNumber}</p>`
@@ -1189,8 +1205,8 @@ function buildInvoiceDownloadMarkup(
           <p>${invoice.vendorCompany?.city || ""} ${invoice.vendorCompany?.state || ""} ${invoice.vendorCompany?.zip || ""}</p>
         </div>
         <div>
-          <h2>Bill To: AMS</h2>
-          <p>${amsProfile?.companyName || "Advanced Maintenance Services"}</p>
+          <h2>Bill To: Spark Command Systems</h2>
+          <p>${amsProfile?.companyName || "Spark Command Systems"}</p>
           <p>${amsProfile?.contactName || ""}</p>
           <p>${amsProfile?.email || ""}</p>
           <p>${amsProfile?.phone || ""}</p>
@@ -1202,7 +1218,7 @@ function buildInvoiceDownloadMarkup(
       <p class="meta"><strong>Invoice Date:</strong> ${formatDate(invoice.invoiceDate)}</p>
       <p class="meta"><strong>Due Date:</strong> ${formatDate(invoice.dueDate)}</p>
       <p class="meta"><strong>Terms:</strong> ${invoice.terms || "Net 30"}</p>
-      <p class="meta"><strong>AMS Work Order Number:</strong> ${amsWorkOrderNumber}</p>
+      <p class="meta"><strong>Internal Work Order Number:</strong> ${amsWorkOrderNumber}</p>
       ${externalWorkOrderMarkup}
       <table>
         <thead>
@@ -1321,7 +1337,7 @@ function SellControl({
         <Field label="Current Cost">
           <input value={formatMoney(costValue)} readOnly disabled />
         </Field>
-        <Field label="AMS Sell Price (Optional)">
+        <Field label="Internal Sell Price (Optional)">
           <input
             value={sellValue}
             onChange={(event) => onChange(event.target.value)}
@@ -2079,7 +2095,7 @@ function AppBuild03() {
         password: "",
         phone: "",
         jobTitle: "",
-        companyName: "Advanced Maintenance Services",
+        companyName: "Spark Command Systems",
         streetAddress: "",
         city: "",
         state: "",
@@ -2245,7 +2261,7 @@ function AppBuild03() {
       showActionNotice(
         "info",
         type === "ams"
-          ? "AMS Demo started in local demo mode. Firestore operational data remains available only to authenticated Firebase users."
+          ? "Admin demo started in local demo mode. Firestore operational data remains available only to authenticated Firebase users."
           : "Crew Demo started in local demo mode. Use a real Crew login linked to a Firestore vendor profile to view live available work.",
       );
     }
@@ -2520,7 +2536,7 @@ function AppBuild03() {
   const confirmSiteImport = async () => {
     if (!currentUser?.firebaseUid) {
       setSiteImportError(
-        "Site imports require a Firebase-authenticated AMS session.",
+        "Site imports require a Firebase-authenticated operations session.",
       );
       return;
     }
@@ -3678,7 +3694,7 @@ function AppBuild03() {
     }));
     showActionNotice(
       "success",
-      `${targetWorkOrder.amsWorkOrderNumber || "Work order"} updated to ${status}.`,
+      `${formatInternalWorkOrderNumber(targetWorkOrder.amsWorkOrderNumber, "Work order")} updated to ${status}.`,
     );
   };
 
@@ -4415,7 +4431,7 @@ function AppBuild03() {
     ) {
       setSellSaveNotice({
         type: "error",
-        message: "You do not have permission to save AMS sell pricing.",
+        message: "You do not have permission to save internal sell pricing.",
       });
       return false;
     }
@@ -5185,14 +5201,14 @@ function AppBuild03() {
   const platformCompanies = [
     {
       id: "company-scs",
-      name: "SparkCommand Systems",
+      name: "Spark Command Systems",
       type: "Platform",
       users: appState.users.filter((user) => user.role === ROLES.OWNER).length,
       sites: 0,
     },
     {
       id: "company-ams",
-      name: "Advanced Maintenance Services",
+      name: "Spark Command Systems",
       type: "Customer",
       users: appState.users.filter((user) => AMS_ROLES.includes(user.role))
         .length,
@@ -5574,8 +5590,8 @@ function AppBuild03() {
         </div>
         <div className="proposal-summary-grid">
           <div>
-            <span className="detail-label">AMS Work Order</span>
-            <p>{workOrder?.amsWorkOrderNumber || "Not available"}</p>
+            <span className="detail-label">Internal Work Order</span>
+            <p>{formatInternalWorkOrderNumber(workOrder?.amsWorkOrderNumber)}</p>
           </div>
           <div>
             <span className="detail-label">Site</span>
@@ -5599,7 +5615,7 @@ function AppBuild03() {
               }
             />
           </Field>
-          <Field label="AMS Notes">
+          <Field label="Operations Notes">
             <textarea
               rows="4"
               value={reviewForm.amsNotes}
@@ -5661,7 +5677,7 @@ function AppBuild03() {
 
   const ownerDashboard = (
     <div className="screen-grid">
-      <PageSection title="Owner Overview">
+      <PageSection title="Platform Overview">
         <StatGrid
           items={[
             {
@@ -5693,11 +5709,11 @@ function AppBuild03() {
         <div className="proposal-summary-grid">
           <div>
             <span className="detail-label">Brand Layer</span>
-            <p>SparkCommand Systems</p>
+            <p>Spark Command Systems</p>
           </div>
           <div>
             <span className="detail-label">Customer Layer</span>
-            <p>Advanced Maintenance Services</p>
+            <p>Spark Command Systems</p>
           </div>
           <div>
             <span className="detail-label">Operational Records</span>
@@ -5707,8 +5723,8 @@ function AppBuild03() {
             </p>
           </div>
           <div>
-            <span className="detail-label">Owner Visibility</span>
-            <p>Hidden from AMS and Crew menus</p>
+            <span className="detail-label">Platform Admin Visibility</span>
+            <p>Hidden from Operations and Crew menus</p>
           </div>
         </div>
       </PageSection>
@@ -5936,7 +5952,7 @@ function AppBuild03() {
                     key: "reference",
                     label: "Job / WO Ref",
                     render: (row) =>
-                      `${row.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                      `${row.id} / ${formatInternalWorkOrderNumber(appState.workOrders.find((workOrder) => workOrder.id === row.workOrderId)?.amsWorkOrderNumber)}`,
                   },
                   {
                     key: "serviceDate",
@@ -5977,11 +5993,13 @@ function AppBuild03() {
                   },
                   {
                     key: "wo",
-                    label: "AMS Work Order",
+                    label: "Internal Work Order",
                     render: (row) =>
-                      appState.workOrders.find(
-                        (workOrder) => workOrder.id === row.workOrderId,
-                      )?.amsWorkOrderNumber || "Not available",
+                      formatInternalWorkOrderNumber(
+                        appState.workOrders.find(
+                          (workOrder) => workOrder.id === row.workOrderId,
+                        )?.amsWorkOrderNumber,
+                      ),
                   },
                   {
                     key: "invoice",
@@ -6158,9 +6176,9 @@ function AppBuild03() {
                       },
                       {
                         key: "wo",
-                        label: "AMS Work Order Number",
+                        label: "Internal Work Order Number",
                         render: (row) =>
-                          row.workOrder?.amsWorkOrderNumber || "Not available",
+                          formatInternalWorkOrderNumber(row.workOrder?.amsWorkOrderNumber),
                       },
                       {
                         key: "invoice",
@@ -6243,8 +6261,8 @@ function AppBuild03() {
                 </div>
                 <div className="proposal-history-notes">
                   <div>
-                    <span className="detail-label">AMS Notes</span>
-                    <p>{proposal.amsNotes || "No AMS notes yet."}</p>
+                    <span className="detail-label">Operations Notes</span>
+                    <p>{proposal.amsNotes || "No operations notes yet."}</p>
                   </div>
                 </div>
                 {canResubmit ? (
@@ -6287,7 +6305,7 @@ function AppBuild03() {
                     key: "reference",
                     label: "Job / WO Ref",
                     render: (row) =>
-                      `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                      `${row.job.id} / ${formatInternalWorkOrderNumber(appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber)}`,
                   },
                   {
                     key: "amount",
@@ -6341,7 +6359,7 @@ function AppBuild03() {
                     key: "reference",
                     label: "Job / WO Ref",
                     render: (row) =>
-                      `${row.job.id} / ${appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber || "Not available"}`,
+                      `${row.job.id} / ${formatInternalWorkOrderNumber(appState.workOrders.find((workOrder) => workOrder.id === row.job.workOrderId)?.amsWorkOrderNumber)}`,
                   },
                   {
                     key: "site",
@@ -6397,11 +6415,13 @@ function AppBuild03() {
                   <div>
                     <span className="detail-label">Work Order</span>
                     <p>
-                      {appState.workOrders.find(
-                        (workOrder) =>
-                          workOrder.id ===
-                          selectedCrewInvoiceRecord.job.workOrderId,
-                      )?.amsWorkOrderNumber || "Not available"}
+                      {formatInternalWorkOrderNumber(
+                        appState.workOrders.find(
+                          (workOrder) =>
+                            workOrder.id ===
+                            selectedCrewInvoiceRecord.job.workOrderId,
+                        )?.amsWorkOrderNumber,
+                      )}
                     </p>
                   </div>
                   <div>
@@ -6439,7 +6459,7 @@ function AppBuild03() {
                     </p>
                   </div>
                   <div>
-                    <span className="detail-label">AMS Notes</span>
+                    <span className="detail-label">Operations Notes</span>
                     <p>
                       {selectedCrewInvoiceRecord.invoice.notes ||
                         "No notes yet."}
@@ -6615,10 +6635,10 @@ function AppBuild03() {
       <PageSection title="Internal Notes">
         <div className="detail-stack">
           <div className="detail-card">
-            <span className="detail-label">Owner Note</span>
+            <span className="detail-label">Platform Admin Note</span>
             <p>
-              Owner portal remains hidden and only opens for the mapped platform
-              account.
+              Admin portal remains hidden and only opens for the mapped platform
+              admin account.
             </p>
           </div>
           <div className="detail-card">
@@ -7188,10 +7208,11 @@ function AppBuild03() {
                         },
                         {
                           key: "wo",
-                          label: "AMS Work Order",
+                          label: "Internal Work Order",
                           render: (row) =>
-                            row.workOrder?.amsWorkOrderNumber ||
-                            "Not available",
+                            formatInternalWorkOrderNumber(
+                              row.workOrder?.amsWorkOrderNumber,
+                            ),
                         },
                         {
                           key: "invoice",
@@ -7658,8 +7679,9 @@ function AppBuild03() {
                   columns={[
                     {
                       key: "reference",
-                      label: "AMS Ref",
-                      render: (row) => row.amsWorkOrderNumber,
+                      label: "Internal Ref",
+                      render: (row) =>
+                        formatInternalWorkOrderNumber(row.amsWorkOrderNumber),
                     },
                     ...(showExternalWorkOrder
                       ? [
@@ -7722,8 +7744,12 @@ function AppBuild03() {
                   </div>
                   <div className="proposal-summary-grid">
                     <div>
-                      <span className="detail-label">AMS Work Order</span>
-                      <p>{selectedWorkOrder.amsWorkOrderNumber}</p>
+                      <span className="detail-label">Internal Work Order</span>
+                      <p>
+                        {formatInternalWorkOrderNumber(
+                          selectedWorkOrder.amsWorkOrderNumber,
+                        )}
+                      </p>
                     </div>
                     <div>
                       <span className="detail-label">Service Type</span>
@@ -8141,8 +8167,12 @@ function AppBuild03() {
                         </div>
                         <div className="proposal-summary-grid">
                           <div>
-                            <span className="detail-label">AMS Work Order</span>
-                            <p>{workOrder.amsWorkOrderNumber}</p>
+                            <span className="detail-label">Internal Work Order</span>
+                            <p>
+                              {formatInternalWorkOrderNumber(
+                                workOrder.amsWorkOrderNumber,
+                              )}
+                            </p>
                           </div>
                           <div>
                             <span className="detail-label">Service Type</span>
@@ -8702,14 +8732,14 @@ function AppBuild03() {
   const amsTeamScreen = (
     <div className="screen-grid">
       <PageSection
-        title="AMS Team"
+        title="Operations Team"
         action={
           canEditCrewIdentity(currentUser) ? (
             <button
               className="primary-button"
               onClick={() => openModal("amsTeammate")}
             >
-              Add AMS Teammate
+              Add Team Member
             </button>
           ) : null
         }
@@ -8749,7 +8779,7 @@ function AppBuild03() {
                     setActiveModal("teamProfile");
                   }}
                   emptyTitle="No team members"
-                  emptyText="AMS teammates added here will appear in the directory."
+                  emptyText="Team members added here will appear in the directory."
                 />
               </div>
             </div>
@@ -8757,8 +8787,8 @@ function AppBuild03() {
           detail={
             <div className="detail-stack">
               <div className="detail-card">
-                <span className="detail-label">AMS Team Chat</span>
-                <strong>AMS Team Chat Coming Soon</strong>
+                <span className="detail-label">Operations Team Chat</span>
+                <strong>Operations Team Chat Coming Soon</strong>
                 <p className="detail-muted">
                   Direct team messaging will be added later with backend
                   support.
@@ -9193,8 +9223,8 @@ function AppBuild03() {
     if (UNDER_CONSTRUCTION_SCREENS.has(activeScreen))
       return (
         <UnderConstruction
-          title={SCREEN_LABELS[activeScreen]}
-          message={`${SCREEN_LABELS[activeScreen]} is reserved for a future additive release.`}
+          title={DISPLAY_SCREEN_LABELS[activeScreen]}
+          message={`${DISPLAY_SCREEN_LABELS[activeScreen]} is reserved for a future additive release.`}
         />
       );
     if (activeScreen === "profile") return profileScreen;
@@ -9271,7 +9301,7 @@ function AppBuild03() {
         open={drawerOpen}
         menuItems={DRAWER_MENUS[currentUser.role]}
         activeScreen={activeScreen}
-        labels={SCREEN_LABELS}
+        labels={DISPLAY_SCREEN_LABELS}
         currentUser={currentUser}
         onNavigate={openScreen}
         onLogout={logout}
@@ -9295,7 +9325,7 @@ function AppBuild03() {
           <div className="screen-header">
             <div>
               <div className="eyebrow">{getPortalEyebrow(currentUser)}</div>
-              <h1>{SCREEN_LABELS[activeScreen] || "Dashboard"}</h1>
+              <h1>{DISPLAY_SCREEN_LABELS[activeScreen] || "Dashboard"}</h1>
             </div>
           </div>
           {actionNotice ? (
@@ -9478,7 +9508,8 @@ function AppBuild03() {
         }
       >
         <div className="modal-reference">
-          AMS Work Order Number: {nextWorkOrderNumber}
+          Internal Work Order Number:{" "}
+          {formatInternalWorkOrderNumber(nextWorkOrderNumber)}
         </div>
         <InputRow>
           {showExternalWorkOrder ? (
@@ -9759,7 +9790,7 @@ function AppBuild03() {
       >
         <div className="detail-stack">
           <div className="detail-card">
-            <span className="detail-label">AMS Site Template</span>
+            <span className="detail-label">Site Import Template</span>
             <p className="detail-muted">
               Upload a .xlsx or .csv file with exactly these headers:{" "}
               {SITE_IMPORT_HEADERS.join(", ")}.
@@ -9826,7 +9857,7 @@ function AppBuild03() {
                 ]}
                 rows={siteImportRows}
                 emptyTitle="No rows previewed"
-                emptyText="Upload an AMS site template to preview import rows."
+                emptyText="Upload a site import template to preview import rows."
               />
             </div>
           ) : null}
@@ -10183,7 +10214,8 @@ function AppBuild03() {
                 )
                 .map((workOrder) => (
                   <option key={workOrder.id} value={workOrder.id}>
-                    {workOrder.amsWorkOrderNumber} - {workOrder.siteName}
+                    {formatInternalWorkOrderNumber(workOrder.amsWorkOrderNumber)}{" "}
+                    - {workOrder.siteName}
                   </option>
                 ))}
             </select>
@@ -10223,7 +10255,7 @@ function AppBuild03() {
       </Modal>
       <Modal
         open={activeModal === "amsTeammate"}
-        title="Add AMS Teammate"
+        title="Add Team Member"
         onClose={closeModal}
         footer={
           <button className="primary-button" onClick={saveUser}>
@@ -10365,15 +10397,15 @@ function AppBuild03() {
                 }))
               }
             >
-              <option value={ROLES.AMS_ADMIN}>{ROLES.AMS_ADMIN}</option>
-              <option value={ROLES.AMS_MANAGER}>{ROLES.AMS_MANAGER}</option>
+              <option value={ROLES.AMS_ADMIN}>Platform Admin</option>
+              <option value={ROLES.AMS_MANAGER}>Operations Manager</option>
             </select>
           </Field>
         </InputRow>
       </Modal>
       <Modal
         open={activeModal === "teamProfile"}
-        title="AMS Teammate Profile"
+        title="Team Member Profile"
         onClose={closeModal}
       >
         {selectedTeamMember ? (
@@ -10416,7 +10448,7 @@ function AppBuild03() {
                   <span className="detail-label">Company Name</span>
                   <p>
                     {selectedTeamMember.companyName ||
-                      "Advanced Maintenance Services"}
+                      "Spark Command Systems"}
                   </p>
                 </div>
                 <div>

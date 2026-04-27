@@ -9,8 +9,8 @@ export function BrandLogo({ role, accent = false, className = "" }) {
     ? accent
       ? "/scs_technology_logo.jpeg"
       : "/scs_corporate_logo.jpeg"
-    : "/ams_logo.png";
-  const alt = isOwner ? "SparkCommand Systems logo" : "AMS logo";
+    : "/scs_corporate_logo.jpeg";
+  const alt = isOwner ? "Spark Command Systems logo" : "Spark Command Center logo";
 
   return (
     <div className={`brand-logo-wrap ${className}`.trim()}>
@@ -23,9 +23,9 @@ export function SplashScreen() {
   return (
     <div className="splash-screen">
       <div className="splash-card">
-        <img className="splash-logo" src="/ams_logo.png" alt="AMS logo" />
+        <img className="splash-logo" src="/scs_corporate_logo.jpeg" alt="Spark Command Center logo" />
         <div className="splash-copy">
-          <strong>Command Center</strong>
+          <strong>Spark Command Center</strong>
           <span>Version {APP_VERSION}</span>
         </div>
       </div>
@@ -68,15 +68,9 @@ export function Header({
               <BrandLogo role={currentUser?.role} accent className="topbar-accent" />
             </>
           ) : (
-            <a
-              className="topbar-logo-link"
-              href="https://www.advancedmtnc.com"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Open Advanced Maintenance Services website"
-            >
+            <div className="topbar-logo-link" aria-label="Spark Command Systems">
               <BrandLogo role={currentUser?.role} />
-            </a>
+            </div>
           )}
         </div>
       </div>
@@ -179,7 +173,7 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin, l
     <div className="login-shell">
       <div className="login-panel">
         <BrandLogo />
-        <div className="login-caption">Command Center Version {APP_VERSION}</div>
+        <div className="login-caption">Spark Command Center Version {APP_VERSION}</div>
 
         <label className="field">
           <span>Email</span>
@@ -220,7 +214,7 @@ export function LoginScreen({ email, password, onChange, onLogin, onDemoLogin, l
           {SHOW_DEMO_LOGIN ? (
             <>
               <button className="secondary-button" onClick={() => onDemoLogin("ams")} disabled={loading}>
-                AMS Demo
+                Admin Demo
               </button>
               <button className="secondary-button" onClick={() => onDemoLogin("crew")} disabled={loading}>
                 Crew Demo
